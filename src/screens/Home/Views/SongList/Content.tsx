@@ -14,18 +14,42 @@ interface SonglistInfo {
   tagId: string
 }
 
+/**
+ * 取一个当前真正可用的歌单源。
+ *
+ * 必要性：这里原先硬编码 `{ source: 'kw', sortId: '5' }`，而本 fork 只实现了
+ * `anylisten` 一个源。只要读到旧版本留下的设置（`common` 里持久化的
+ * `source: 'kw'`），`musicSdk['kw']` 就是 undefined，
+ * 歌单页会**一直空白且不报错**。
+ *
+ * 所以所有来源都要校验一遍，任何一项不可用就回退到当前可用的源与排序。
+ */
+function resolveSonglistInfo(info: { source?: string, sortId?: string, tagId?: string }): SonglistInfo {
+  const available = songlistState.sources
+  const source = (available.includes(info.source as InitState['sources'][number])
+    ? info.source
+    : available[0]) as InitState['sources'][number] | undefined
+
+  if (!source) return { source: 'anylisten' as InitState['sources'][number], sortId: 'all' as SortInfo['id'], tagId: '' }
+
+  const sorts = songlistState.sortList[source] ?? []
+  const sortId = (sorts.some(s => s.id === info.sortId) ? info.sortId : sorts[0]?.id ?? 'all') as SortInfo['id']
+
+  return { source, sortId, tagId: info.tagId ?? '' }
+}
+
 export default () => {
   const headerBarRef = useRef<HeaderBarType>(null)
   const listRef = useRef<ListType>(null)
-  const songlistInfo = useRef<SonglistInfo>({ source: 'kw', sortId: '5', tagId: '' })
+  // 初值也要是有效值：设置读取是异步的，读取期间界面已经渲染过一次
+  const songlistInfo = useRef<SonglistInfo>(resolveSonglistInfo({}))
 
   useEffect(() => {
     void getSongListSetting().then(info => {
-      songlistInfo.current.source = info.source
-      songlistInfo.current.sortId = info.sortId
-      songlistInfo.current.tagId = info.tagId
-      headerBarRef.current?.setSource(info.source, info.sortId, info.tagName, info.tagId)
-      listRef.current?.loadList(info.source, info.sortId, info.tagId)
+      const resolved = resolveSonglistInfo(info)
+      songlistInfo.current = resolved
+      headerBarRef.current?.setSource(resolved.source, resolved.sortId, info.tagName, resolved.tagId)
+      listRef.current?.loadList(resolved.source, resolved.sortId, resolved.tagId)
     })
   }, [])
 

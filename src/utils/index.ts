@@ -126,6 +126,15 @@ export const toOldMusicInfo = (minfo: LX.Music.MusicInfo): any => {
         oInfo.mrcUrl = minfo.meta.mrcUrl
         oInfo.trcUrl = minfo.meta.trcUrl
         break
+      case 'anylisten':
+        // 必须原样带走服务端原始对象。
+        //
+        // 取址链路是 core/music/utils.ts → musicSdk[source].getMusicUrl(toOldMusicInfo(musicInfo))，
+        // 也就是说适配器**只能**从这个扁平对象里拿服务端数据。
+        // 漏掉这一行的话，适配器取不到原始对象、每首歌都会抛错 ——
+        // 而类型检查与打包都不会有任何提示。
+        oInfo.anylisten = minfo.meta.anylisten
+        break
     }
   }
 

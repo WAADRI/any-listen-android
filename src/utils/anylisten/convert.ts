@@ -61,11 +61,30 @@ export class MissingServerMusicInfoError extends Error {
   }
 }
 
-/** 从 lx 模型里取回服务端原始对象。取不到时抛错，绝不静默重建。 */
-export function serverMusicInfoOf(musicInfo: LX.Music.MusicInfo): AnyListenMusicInfo {
-  const raw = (musicInfo.meta as LX.Music.MusicInfoMeta_anylisten | undefined)?.anylisten
-  if (!raw?.meta?.musicId && !raw?.id) {
-    throw new MissingServerMusicInfoError(musicInfo.id)
+/**
+ * 从适配器收到的对象里取回服务端原始曲目。
+ *
+ * ## 为什么两种形状都要接受
+ *
+ * 适配器的入参是 `core/music/utils.ts` 里的
+ * `toOldMusicInfo(musicInfo)` —— 一个**扁平对象**，服务端原对象挂在它的
+ * `anylisten` 字段上（见 `src/utils/index.ts` 的 `case 'anylisten'`）。
+ *
+ * 但歌单/搜索链路里也可能直接拿到 lx 模型（服务端原对象在 `meta.anylisten`）。
+ * 这两种形状都真实存在过，所以都接受 —— 而不是只认其中一种、
+ * 让另一种在运行时抛错。
+ *
+ * 取不到时**必须抛错**，不能退化成用 lx 的字段重建曲目：服务端对缺少
+ * `isLocal` / `meta.filePath` 的曲目会返回 HTTP 200 但给出错误结果
+ * （占位地址、别人的封面、`暂无歌词`），全程不报错。
+ */
+export function serverMusicInfoOf(musicInfo: any): AnyListenMusicInfo {
+  const raw = (musicInfo?.anylisten
+    ?? (musicInfo?.meta as LX.Music.MusicInfoMeta_anylisten | undefined)?.anylisten) as
+    AnyListenMusicInfo | undefined
+
+  if (!raw || (!raw.meta?.musicId && !raw.id)) {
+    throw new MissingServerMusicInfoError(musicInfo?.id ?? 'unknown')
   }
   return raw
 }
@@ -151,33 +170,6 @@ export function toOldMusicInfoFromLx(musicInfo: LX.Music.MusicInfoOnline): Recor
     // 关键：带上服务端原始对象，供 toNewMusicInfo 重建时保留
     anylisten: meta.anylisten,
   }
-}
-
-/** 批量转换，并过滤掉服务端返回里的空条目。 */
-export function toLxMusicList(tracks: unknown, serverUrlOverride?: string): LX.Music.MusicInfoOnline[] {
-  if (!Array.isArray(tracks)) return []
-  return tracks
-    .filter((t): t is AnyListenMusicInfo =>
-      !!t && typeof t === 'object' && typeof (t as AnyListenMusicInfo).id === 'string')
-    .map((t) => toLxMusicInfo(t, serverUrlOverride))
-}
-
-/**
- * 服务端曲目列表 → 界面曲目列表。
- *
- * 与 `toLxMusicList` 的区别：那个函数接受的是**任意值**（用于处理网络返回），
- * 先做运行时校验再转换；这个函数接受**已确认类型**的服务端曲目，
- * 少一次无谓的校验与类型断言。
- *
- * 两者都走 `toLxMusicInfo`，因此封面解析、`meta.anylisten` 保留等
- * 关键行为完全一致 —— 这是刻意的：歌单里的歌曲与搜索结果的歌曲
- * 必须产生同样的 `MusicInfo`，否则取址时会因为缺 `meta.anylisten` 而失败。
- */
-export function toLxMusicListFromServer(
-  tracks: AnyListenMusicInfo[],
-  serverUrlOverride?: string,
-): LX.Music.MusicInfoOnline[] {
-  return tracks.map((t) => toLxMusicInfo(t, serverUrlOverride))
 }
 
 /**

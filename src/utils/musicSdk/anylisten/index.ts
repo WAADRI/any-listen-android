@@ -29,6 +29,7 @@
 import { getMusicUrl, getMusicPic, getMusicLyric, ensureConnected } from '../../anylisten/api'
 import { resolveServerUrl } from '../../anylisten/serverUrl'
 import { ensureLoaded, searchLibrary, getLibraryState } from '../../anylisten/library'
+import { serverMusicInfoOf } from '../../anylisten/convert'
 import type { AnyListenMusicInfo } from '../../anylisten/types'
 // 必须在这里 import 一次并作为值导出。
 // 只写 `export { default as songList } from './songList'` 是**纯再导出**，
@@ -69,17 +70,16 @@ function serverUrl(): string {
   }
 }
 
-/** 从 lx 传进来的「旧版扁平对象」里取回服务端原始曲目。 */
+/**
+ * 从 lx 传进来的「旧版扁平对象」里取回服务端原始曲目。
+ *
+ * 逻辑委托给 `serverMusicInfoOf`，与适配层共用同一处判断与同一个错误类型 ——
+ * 重复实现会让两边的行为在某次改动后悄悄分叉。
+ */
 function rawOf(oldMusicInfo: any): AnyListenMusicInfo {
-  const raw = oldMusicInfo?.anylisten as AnyListenMusicInfo | undefined
-  if (!raw?.id) {
-    // 这里**不能**用 oldMusicInfo 的字段重建曲目：
-    // 服务端会返回 200 但给出错误结果，且不会有任何报错。
-    throw new Error(
-      '曲目缺少服务端原始数据，无法取址。请重新加载该歌单以补全数据。',
-    )
-  }
-  return raw
+  // 这里**不能**用 oldMusicInfo 的字段重建曲目：
+  // 服务端会返回 200 但给出错误结果，且不会有任何报错。
+  return serverMusicInfoOf(oldMusicInfo)
 }
 
 /**
