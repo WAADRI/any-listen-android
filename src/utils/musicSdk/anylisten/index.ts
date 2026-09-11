@@ -30,6 +30,11 @@ import { getMusicUrl, getMusicPic, getMusicLyric, ensureConnected } from '../../
 import { resolveServerUrl } from '../../anylisten/serverUrl'
 import { ensureLoaded, searchLibrary, getLibraryState } from '../../anylisten/library'
 import type { AnyListenMusicInfo } from '../../anylisten/types'
+// 必须在这里 import 一次并作为值导出。
+// 只写 `export { default as songList } from './songList'` 是**纯再导出**，
+// 它不会在当前模块里绑定 `songList` 标识符，下面默认导出里引用它会直接
+// ReferenceError（而打包阶段发现不了）。
+import songList from './songList'
 
 /**
  * 服务端在「无法真正取到媒体」时会返回这个占位地址。
@@ -193,12 +198,22 @@ export const init = async(): Promise<void> => {
 /** 音质声明。缺了它 `assertApiSupport` 会返回 false，音源会被整体跳过。 */
 export const supportQualitys: LX.Quality[] = ['128k']
 
+/**
+ * 歌单浏览界面（歌单广场 + 歌单详情）的数据源。
+ *
+ * `core/songlist.ts` 只用到它的 `getTags` / `getList` / `getListDetail` 三个方法，
+ * 因此实现这三个方法就能让**整个现成的歌单界面**工作，包括
+ * 「播放全部」「下载」「批量操作」等，不需要改界面代码。
+ */
+export { songList }
+
 export default {
   init,
   musicSearch,
+  songList,
   getMusicUrl: fetchMusicUrl,
   getPic: fetchPic,
   getLyric: fetchLyric,
-  // 不提供 songList / leaderboard / hotSearch：any-listen 没有对应的服务端能力，
+  // 不提供 leaderboard / hotSearch：any-listen 没有对应的服务端能力，
   // 缺失这些的源会被 lx 的 UI 自动禁用相应入口，而不是报错。
 }

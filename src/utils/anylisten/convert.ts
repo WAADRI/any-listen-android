@@ -163,6 +163,24 @@ export function toLxMusicList(tracks: unknown, serverUrlOverride?: string): LX.M
 }
 
 /**
+ * 服务端曲目列表 → 界面曲目列表。
+ *
+ * 与 `toLxMusicList` 的区别：那个函数接受的是**任意值**（用于处理网络返回），
+ * 先做运行时校验再转换；这个函数接受**已确认类型**的服务端曲目，
+ * 少一次无谓的校验与类型断言。
+ *
+ * 两者都走 `toLxMusicInfo`，因此封面解析、`meta.anylisten` 保留等
+ * 关键行为完全一致 —— 这是刻意的：歌单里的歌曲与搜索结果的歌曲
+ * 必须产生同样的 `MusicInfo`，否则取址时会因为缺 `meta.anylisten` 而失败。
+ */
+export function toLxMusicListFromServer(
+  tracks: AnyListenMusicInfo[],
+  serverUrlOverride?: string,
+): LX.Music.MusicInfoOnline[] {
+  return tracks.map((t) => toLxMusicInfo(t, serverUrlOverride))
+}
+
+/**
  * 服务端曲目 → 搜索结果的「旧版扁平对象」。
  *
  * lx 的搜索链路（`store/search/music/action.ts`）会对每一项调用

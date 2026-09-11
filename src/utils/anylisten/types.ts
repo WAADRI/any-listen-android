@@ -55,25 +55,49 @@ export interface AnyListenMusicInfo {
 /** `getListMusics` 的返回：**裸数组**，不是信封对象。 */
 export type AnyListenMusicList = AnyListenMusicInfo[]
 
-/** 歌单元数据。服务端要求建歌单时**必须**提供它，否则报 NOT NULL constraint failed。 */
+/**
+ * 歌单元数据。字段名以实测返回为准。
+ *
+ * 实测的键集合：
+ * `deviceId / path / includeSubDir / lazzyParseMeta / createTime / updateTime /
+ * desc / playCount / posTime / enabledRemove / songCount`
+ *
+ * ⚠️ **没有封面、没有作者、没有时长**。界面上任何「歌单封面 / 创建者」的位置
+ * 都拿不到数据，只能留空或显示占位图。
+ *
+ * `enabledRemove` 有一个重要用途：实测服务端挂载的文件夹映射
+ * （`type: 'local'`，如 `/music` 目录）是 `false`，而用户手建的歌单是 `true`。
+ * 因此它是「这个歌单用户能否管理」的天然标记，用于筛选浏览列表。
+ *
+ * 建歌单时服务端要求**必须**提供这个对象，否则报 NOT NULL constraint failed。
+ */
 export interface AnyListenListMeta {
-  songCount: number
-  pic: string
-  playCount: number
-  createTime: number
-  updateTime: number
-  posTime: number
-  desc: string
+  songCount?: number
+  /** 仅 `type: 'local'`：服务端主机上映射的文件夹路径，如 `/music` */
+  path?: string
+  /** 仅 `type: 'local'`：是否包含子目录 */
+  includeSubDir?: boolean
+  /** 仅 `type: 'local'`：是否延迟解析元数据 */
+  lazzyParseMeta?: boolean
+  /** 是否允许删除。`false` 表示文件夹映射或不可管理的内置列表 */
+  enabledRemove?: boolean
+  playCount?: number
+  playTime?: number
+  createTime?: number
+  updateTime?: number
+  posTime?: number
+  desc?: string
   [key: string]: unknown
 }
 
 /**
  * 歌单类型。
  *
- * 注意**不是** `'user'`（这是最容易猜错的值）。`'local'` 表示服务端主机上的
- * 文件夹映射，不是用户手建的歌单，应当只读。
+ * 注意**不是** `'user'`（这是最容易猜错的值）。实测取值：
+ * - `'default'` —— 三个内置列表（`default` / `love` / `last_played`）
+ * - `'local'` —— 服务端主机上的文件夹映射，**不是**用户手建的歌单，应当只读
  */
-export type AnyListenListType = 'general' | 'local' | 'online' | 'remote'
+export type AnyListenListType = 'default' | 'general' | 'local' | 'online' | 'remote'
 
 export interface AnyListenUserList {
   id: string
