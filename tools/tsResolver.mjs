@@ -43,16 +43,47 @@ function tryResolveExtensionless(specifier, context) {
 }
 
 /**
+ * 目录导入：`import x from './anylisten'` → `./anylisten/index.ts`。
+ *
+ * Metro（以及 TS 的 bundler 解析）支持这种写法，本仓库确实在用
+ * （`src/utils/musicSdk/index.js` 就是这么导入适配器的），但 Node 的 ESM
+ * 解析器会直接抛 `ERR_UNSUPPORTED_DIR_IMPORT`。
+ *
+ * 与上面一样，只补 Node 侧的解析，不改生产代码的写法。
+ */
+function tryResolveDirectory(specifier, context) {
+  if (!specifier.startsWith('./') && !specifier.startsWith('../')) return null
+
+  const parentPath = context.parentURL ? fileURLToPath(context.parentURL) : process.cwd()
+  const baseUrl = new URL(specifier, pathToFileURL(parentPath))
+  // 只有确实是个目录时才接手，否则交给下一个解析器（可能是带扩展名的文件）
+  if (!existsSync(fileURLToPath(baseUrl))) return null
+
+  // 按 Metro 的默认顺序：先 index.<ext>，再 <目录名>.<ext>（后者少用，一并支持）
+  const dirName = specifier.split('/').filter(Boolean).pop()
+  for (const ext of CANDIDATE_EXTENSIONS) {
+    for (const candidate of [new URL(`index${ext}`, baseUrl), new URL(`${dirName}${ext}`, baseUrl)]) {
+      if (existsSync(fileURLToPath(candidate))) return { url: candidate.href, shortCircuit: true }
+    }
+  }
+  return null
+}
+
+/**
  * Node >= 22.15 / 24 的同步解析钩子。
  * 必须通过 `registerHooks` 注册，仅仅导出这个函数是不够的。
  */
 export function resolveSync(specifier, context, nextResolve) {
-  return tryResolveExtensionless(specifier, context) ?? nextResolve(specifier, context)
+  return tryResolveExtensionless(specifier, context)
+    ?? tryResolveDirectory(specifier, context)
+    ?? nextResolve(specifier, context)
 }
 
 /** 异步解析钩子，供 `module.register()` 使用。 */
 export async function resolve(specifier, context, nextResolve) {
-  return tryResolveExtensionless(specifier, context) ?? nextResolve(specifier, context)
+  return tryResolveExtensionless(specifier, context)
+    ?? tryResolveDirectory(specifier, context)
+    ?? nextResolve(specifier, context)
 }
 
 /**
