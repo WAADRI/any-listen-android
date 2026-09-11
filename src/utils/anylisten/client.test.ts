@@ -426,3 +426,57 @@ test('close() 之后不再重连', async () => {
   await sleep(50)
   assert.equal(FakeWebSocket.created.length, count, 'close() 之后仍在重连')
 })
+
+// ------------------------------------------------- connect() 的时序契约
+
+/**
+ * 这三条锁定一个曾导致「门禁提前放行」的时序陷阱。
+ *
+ * `connect()` 内部只是调 `openSocket()`，而 socket 的 `onopen` 是**异步**回调，
+ * 所以 `connect()` resolve 时连接**还没建立**。任何把 `connect()` 的结果
+ * 当作「已连接」的代码都会提前放行，随后的 RPC 照样失败 —— 而表面上
+ * 一切「成功」。播放门禁 `global.lx.apiInitPromise` 正是踩过这个坑，
+ * 修法是改用 `api.ts` 里轮询到 `connected` 的 `waitForConnected()`。
+ */
+
+test('connect() 在 socket open 之前就 resolve（不能拿它当已连接）', async () => {
+  const { session } = makeSession()
+  await session.connect()
+
+  // 此刻握手已完成、socket 已创建，但服务端还没接受连接
+  assert.notEqual(session.getState(), 'connected',
+    'connect() 竟然在 open 之前就把状态置为 connected —— 时序契约变了')
+
+  const rec = FakeWebSocket.created[FakeWebSocket.created.length - 1]
+  assert.ok(rec, '客户端没有创建 WebSocket')
+
+  rec.socket.accept()
+  await sleep(5)
+  assert.equal(session.getState(), 'connected', 'accept() 之后仍不是 connected')
+  session.close()
+})
+
+test('socket open 之前发起 RPC 必须失败（证明「已连接」是真实前提）', async () => {
+  const { session } = makeSession()
+  await session.connect()
+  assert.notEqual(session.getState(), 'connected')
+
+  // 未连接时 call() 应立刻拒绝，而不是静默挂起或假装成功
+  await assert.rejects(
+    () => session.call('getAllUserLists'),
+    /连接未就绪/,
+    '未连接时 RPC 没有立即失败',
+  )
+
+  const rec = FakeWebSocket.created[FakeWebSocket.created.length - 1]
+  rec?.socket.accept()
+  await sleep(5)
+  session.close()
+})
+
+test('握手失败时状态为 closed，用于让等待方立刻放弃而不是等到超时', async () => {
+  const { session } = makeSession({ fetchImpl: makeFetch({ status: 401 }) })
+  await session.connect()
+  assert.equal(session.getState(), 'closed')
+  session.close()
+})

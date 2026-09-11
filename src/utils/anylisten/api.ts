@@ -98,7 +98,41 @@ export async function ensureConnected(): Promise<AnyListenSession> {
   await s.connect()
   // 连接是异步建立的；这里不阻塞等待，由调用方的 call() 在未就绪时报错并触发重试。
   // 之所以不等：等待会把「连接慢」直接变成 UI 卡住，而 UI 需要立刻显示状态。
+  //
+  // ⚠️ 因此**不能**用本函数的结果当作「已连接」的判据 —— 它在 socket 真正
+  // open 之前就 resolve 了。需要真正的可用性时用下面的 waitForConnected()。
   return s
+}
+
+/**
+ * 等到会话**真的**连上为止（或判定不可能成功）。
+ *
+ * `connect()` 内部只是调 `openSocket()`，而 socket 的 `onopen` 是**异步**回调，
+ * 所以 `connect()` resolve 时状态通常还是 `connecting`。用 `ensureConnected()`
+ * 的结果当门禁会**提前放行**，随后的 RPC 照样失败。
+ *
+ * 这个区分很关键：播放门禁 `global.lx.apiInitPromise` 必须反映真实可用性，
+ * 否则用户看到的是「已就绪」却放不出歌。
+ *
+ * @param timeoutMs 最长等待时间；超时抛错，避免门禁永远挂起。
+ */
+export async function waitForConnected(timeoutMs = 20_000): Promise<AnyListenSession> {
+  const s = getSession()
+  if (s.getState() === 'connected') return s
+
+  await s.connect()
+
+  const deadline = Date.now() + timeoutMs
+  // 轮询而非监听：session 的状态回调是单播的（设置页已占用），
+  // 这里再抢一个监听者会互相覆盖。轮询间隔取 100ms，代价可忽略。
+  for (;;) {
+    const state = s.getState()
+    if (state === 'connected') return s
+    // 'closed' 表示鉴权失败或未被重试的错误：再等也不会好
+    if (state === 'closed') throw new Error('无法连接到 any-listen 服务器（会话已关闭）')
+    if (Date.now() > deadline) throw new Error(`连接 any-listen 服务器超时（${timeoutMs / 1000} 秒）`)
+    await new Promise(resolve => setTimeout(resolve, 100))
+  }
 }
 
 // ---------------------------------------------------------------- 歌单

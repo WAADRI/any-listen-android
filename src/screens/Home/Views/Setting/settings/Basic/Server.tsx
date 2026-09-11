@@ -4,14 +4,22 @@
  * 这是本 fork 与上游最大的界面差异：上游的音源是内置的、无需配置，
  * 而这里必须让用户填自己的服务器地址与密码。
  *
- * ## 为什么要一个「测试连接」按钮
+ * ## 为什么「测试连接」要一路测到真实数据
  *
- * 配置错误的表现全部是**静默**的：地址写错、密码写错、服务器挂掉，
- * 在界面上都只是「没有歌」。而这些原因的处理方式完全不同
- * （地址要改 URL、密码错会累计失败次数导致**服务端封 IP**、
- * 服务器挂掉只能等），所以这里把具体原因直接显示出来。
+ * 配置错误的表现全部是**静默**的：地址写错、密码写错、反向代理没转发
+ * WebSocket、服务器挂掉，在界面上都只是「没有歌」，报错也都是
+ * 「source init failed」这类与真实原因无关的文本。
  *
- * 特别注意 401 与 403 的区分：连续密码错误会被服务端拉黑 IP，
+ * 尤其不能只测握手：HTTP 的 `/api/ipc/ah` 在只配了普通反代的服务器上
+ * 会成功，而真正取歌用的 `wss://…/api/ipc/socket` 被拒 —— 于是「测试连接」
+ * 显示成功，用户却一首歌都放不出来。所以这里分四步，每步都给出结论：
+ *
+ *   1. 握手（HTTP）        —— 地址与密码是否正确
+ *   2. WebSocket 连接      —— 反向代理是否正确转发了 Upgrade
+ *   3. 取歌单列表          —— 会话与 inited 是否真的可用
+ *   4. 取第一个歌单的歌曲  —— 完整的「服务端 → 曲库」链路
+ *
+ * 另外 401 与 403 必须区分：连续密码错误会被服务端拉黑 IP，
  * 这是用户必须立刻知道的信息，否则他会反复重试、把封禁时间拖长。
  */
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
@@ -25,13 +33,48 @@ import { useTheme } from '@/store/theme/hook'
 import { updateSetting } from '@/core/common'
 import { useSettingValue } from '@/store/setting/hook'
 import { handshake, normalizeServerUrl } from '@/utils/anylisten/client'
-import { resetSession } from '@/utils/anylisten/api'
+import {
+  getAllUserLists,
+  getListMusics,
+  resetSession,
+  setupAnyListen,
+  waitForConnected,
+  type AnyListenMyAllList,
+} from '@/utils/anylisten/api'
+
+/** 每一步单独记录，便于失败时一眼看出走到了哪一步。 */
+interface TestStep {
+  label: string
+  ok: boolean
+  detail: string
+}
 
 type TestState =
   | { kind: 'idle' }
   | { kind: 'testing' }
-  | { kind: 'ok', serverId: string }
-  | { kind: 'fail', message: string }
+  | { kind: 'done', steps: TestStep[] }
+
+/** 整个测试的总超时：握手之外还有连接与两次 RPC，给足重试余地。 */
+const TEST_TIMEOUT_MS = 30_000
+
+/** 把可能很长的错误压成一行，避免撑破界面。 */
+const oneLine = (text: string) => text.replace(/\s+/g, ' ').trim().slice(0, 160)
+
+/** 统计服务端返回的歌单，顺带给出「有没有内容」的直观判断。 */
+function summarizeLists(all: AnyListenMyAllList | undefined): { lists: number, tracks: number } {
+  if (!all) return { lists: 0, tracks: 0 }
+  const groups = [all.defaultList, all.loveList, all.lastPlayList, all.userList]
+  let lists = 0
+  let tracks = 0
+  for (const group of groups) {
+    if (!Array.isArray(group)) continue
+    for (const item of group) {
+      lists++
+      tracks += item?.meta?.songCount ?? 0
+    }
+  }
+  return { lists, tracks }
+}
 
 const ServerSetting = memo(() => {
   const theme = useTheme()
@@ -52,25 +95,81 @@ const ServerSetting = memo(() => {
     const seq = ++testSeq.current
     const normalized = normalizeServerUrl(url)
     if (!normalized) {
-      setTest({ kind: 'fail', message: '请先填写服务器地址' })
+      setTest({ kind: 'done', steps: [{ label: '服务器地址', ok: false, detail: '请先填写服务器地址' }] })
       return
     }
     setTest({ kind: 'testing' })
-    void handshake({
-      serverUrl: normalized,
-      password,
-      fetchImpl: global.fetch as unknown as typeof fetch,
-    }).then((result) => {
-      // 丢弃过期结果：用户可能在等待期间又点了一次
-      if (seq !== testSeq.current) return
-      if (result.ok) {
-        setTest({ kind: 'ok', serverId: result.serverId })
-      } else {
-        setTest({ kind: 'fail', message: result.message })
+
+    const steps: TestStep[] = []
+    /** 记录一步。只在失败或全部结束时落定 state，避免一次测试触发多次渲染。 */
+    const push = (label: string, ok: boolean, detail: string) => {
+      steps.push({ label, ok, detail })
+    }
+
+    const run = async() => {
+      // 用输入框里的值，而不是已保存的值：用户正在测试尚未保存的配置。
+      // setupAnyListen 是幂等的注入口，这里覆盖成当前输入即可。
+      setupAnyListen({
+        getCredentials: () => ({ serverUrl: normalized, password }),
+      })
+      resetSession()
+
+      // 1. 握手 —— 验证地址与密码
+      const hs = await handshake({
+        serverUrl: normalized,
+        password,
+        fetchImpl: global.fetch as unknown as typeof fetch,
+      })
+      if (!hs.ok) {
+        push('握手（地址与密码）', false, oneLine(hs.message))
+        return
       }
+      push('握手（地址与密码）', true, `服务器 ${hs.serverId ? hs.serverId.slice(0, 8) : '已确认'}`)
+
+      // 2. 连接 WebSocket —— 反向代理最容易漏掉的一环。
+      // 用 waitForConnected 而不是 connect()：后者在 socket open 之前就返回，
+      // 会把「连不上」误报成成功，而那正是这个按钮要发现的问题。
+      try {
+        await waitForConnected(15_000)
+      } catch (err: unknown) {
+        push('WebSocket 连接', false,
+          `${oneLine(err instanceof Error ? err.message : String(err))}。`
+          + '请确认反向代理转发了 WebSocket Upgrade 请求（Nginx 需要 proxy_set_header Upgrade/Connection）。')
+        return
+      }
+      push('WebSocket 连接', true, '已连接')
+
+      // 3. 取歌单列表 —— 证明 inited 之后 RPC 真的可用
+      const all = await getAllUserLists()
+      const { lists, tracks } = summarizeLists(all)
+      if (lists === 0) {
+        push('读取歌单', false, '连接正常，但服务端没有返回任何歌单。请确认服务器上已有曲库。')
+        return
+      }
+      push('读取歌单', true, `共 ${lists} 个歌单，${tracks} 首歌曲`)
+
+      // 4. 取第一个歌单的歌曲 —— 走完「服务端 → 曲库」的完整链路
+      const first = all.userList?.[0] ?? all.defaultList?.[0] ?? all.lastPlayList?.[0]
+      if (!first?.id) {
+        push('读取歌曲', true, '跳过（歌单数量不足以抽样）')
+        return
+      }
+      const listTracks = await getListMusics(first.id)
+      const count = Array.isArray(listTracks) ? listTracks.length : 0
+      push('读取歌曲', true, `「${first.name ?? first.id}」返回 ${count} 首`)
+    }
+
+    const timeout = new Promise<never>((_, reject) => {
+      setTimeout(() => { reject(new Error(`测试超时（超过 ${TEST_TIMEOUT_MS / 1000} 秒无响应）`)) }, TEST_TIMEOUT_MS)
+    })
+
+    void Promise.race([run(), timeout]).then(() => {
+      if (seq !== testSeq.current) return
+      setTest({ kind: 'done', steps })
     }).catch((err: unknown) => {
       if (seq !== testSeq.current) return
-      setTest({ kind: 'fail', message: err instanceof Error ? err.message : String(err) })
+      push('未预期的错误', false, oneLine(err instanceof Error ? err.message : String(err)))
+      setTest({ kind: 'done', steps })
     })
   }, [url, password])
 
@@ -86,9 +185,8 @@ const ServerSetting = memo(() => {
     toast('已保存')
   }, [url, password])
 
-  const statusColor = test.kind === 'ok'
-    ? theme['c-primary-font-active']
-    : test.kind === 'fail' ? theme['c-error'] : theme['c-font-label']
+  const steps = test.kind === 'done' ? test.steps : []
+  const allOk = test.kind === 'done' && steps.length > 0 && steps.every(s => s.ok)
 
   return (
     <View style={styles.container}>
@@ -138,13 +236,24 @@ const ServerSetting = memo(() => {
         <Button onPress={handleSave}>保存</Button>
       </View>
 
-      {test.kind !== 'idle' && test.kind !== 'testing' ? (
+      {steps.length > 0 ? (
         <View style={styles.result}>
-          <Text size={13} color={statusColor}>
-            {test.kind === 'ok'
-              ? `连接成功${test.serverId ? `（服务器 ${test.serverId.slice(0, 8)}）` : ''}`
-              : `连接失败：${test.message}`}
-          </Text>
+          {steps.map((step, index) => (
+            <View key={`${index}-${step.label}`} style={styles.stepRow}>
+              <Text size={13} color={step.ok ? theme['c-primary-font-active'] : theme['c-error']}>
+                {step.ok ? '✓' : '✗'}
+              </Text>
+              <Text size={12} style={styles.stepLabel}>{step.label}</Text>
+              <Text size={12} style={[styles.stepDetail, { color: step.ok ? theme['c-font-label'] : theme['c-error'] }]}>
+                {step.detail}
+              </Text>
+            </View>
+          ))}
+          {test.kind === 'done' ? (
+            <Text size={12} style={styles.verdict} color={allOk ? theme['c-primary-font-active'] : theme['c-error']}>
+              {allOk ? '全部通过，可以正常使用了' : '存在失败项，请按上面的提示处理'}
+            </Text>
+          ) : null}
         </View>
       ) : null}
 
@@ -200,6 +309,22 @@ const styles = createStyle({
   },
   result: {
     marginBottom: 12,
+  },
+  stepRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 4,
+  },
+  stepLabel: {
+    marginLeft: 6,
+    marginRight: 6,
+  },
+  stepDetail: {
+    flex: 1,
+    lineHeight: 17,
+  },
+  verdict: {
+    marginTop: 4,
   },
   note: {
     marginBottom: 4,

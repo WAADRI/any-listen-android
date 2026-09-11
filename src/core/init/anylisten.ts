@@ -18,7 +18,7 @@
  * 「source init failed」这种与真实原因无关的提示。
  */
 import settingState from '@/store/setting/state'
-import { setupAnyListen, ensureConnected, isConfigured } from '@/utils/anylisten/api'
+import { setupAnyListen, waitForConnected, isConfigured } from '@/utils/anylisten/api'
 import { setupConvert } from '@/utils/anylisten/convert'
 import { setupSource } from '@/utils/musicSdk/anylisten'
 import { normalizeServerUrl, type ConnState } from '@/utils/anylisten/client'
@@ -61,6 +61,8 @@ export default function initAnyListen(options?: {
     return Promise.reject(new Error('尚未配置 any-listen 服务器地址，请在「设置 → 基础设置」中填写'))
   }
 
-  return ensureConnected().then(() => undefined)
+  // 必须等**真的**连上：connect() 在 socket open 之前就 resolve 了，
+  // 用它当门禁会提前放行，随后播放照样失败。见 waitForConnected 的说明。
+  return waitForConnected().then(() => undefined)
 }
 
