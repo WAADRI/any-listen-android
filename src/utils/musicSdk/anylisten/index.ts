@@ -23,10 +23,13 @@
  * 所以这里一律用 `serverMusicInfoOf()` 取回原样保存的服务端对象，
  * 取不到就抛错，绝不退化成重建。
  */
-import { getMusicUrl, getMusicPic, getMusicLyric, ensureConnected } from './api'
-import { resolveServerUrl } from './serverUrl'
-import { ensureLoaded, searchLibrary, getLibraryState } from './library'
-import type { AnyListenMusicInfo } from './types'
+// 注意路径层级：本文件在 src/utils/musicSdk/anylisten/，
+// 而所有被引用的模块都在 src/utils/anylisten/ —— 是**上层目录**，
+// 所以一律用 ../../anylisten/ 前缀。
+import { getMusicUrl, getMusicPic, getMusicLyric, ensureConnected } from '../../anylisten/api'
+import { resolveServerUrl } from '../../anylisten/serverUrl'
+import { ensureLoaded, searchLibrary, getLibraryState } from '../../anylisten/library'
+import type { AnyListenMusicInfo } from '../../anylisten/types'
 
 /**
  * 服务端在「无法真正取到媒体」时会返回这个占位地址。
