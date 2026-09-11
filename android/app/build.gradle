@@ -126,21 +126,29 @@ android {
         }
     }
     signingConfigs {
-        release {
-            if (project.hasProperty('MYAPP_UPLOAD_STORE_FILE')) {
-                storeFile file(MYAPP_UPLOAD_STORE_FILE)
-                storePassword MYAPP_UPLOAD_STORE_PASSWORD
-                keyAlias MYAPP_UPLOAD_KEY_ALIAS
-                keyPassword MYAPP_UPLOAD_KEY_PASSWORD
-            } else {
-                def keystorePropertiesFile = rootProject.file("keystore.properties")
-                def keystoreProperties = new Properties()
-                keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+        // 只有真的提供了发布密钥时才创建 release 签名配置。
+        //
+        // 上游的写法是在这里无条件 new FileInputStream(keystore.properties)，
+        // 于是缺少该文件时整个配置阶段就抛异常（"No such file or directory"），
+        // 连 debug 构建都做不了。CI 与本地开发都没有这个文件，所以改成按需创建。
+        def hasReleaseKeystore = project.hasProperty('MYAPP_UPLOAD_STORE_FILE') ||
+            rootProject.file('keystore.properties').exists()
+        if (hasReleaseKeystore) {
+            release {
+                if (project.hasProperty('MYAPP_UPLOAD_STORE_FILE')) {
+                    storeFile file(MYAPP_UPLOAD_STORE_FILE)
+                    storePassword MYAPP_UPLOAD_STORE_PASSWORD
+                    keyAlias MYAPP_UPLOAD_KEY_ALIAS
+                    keyPassword MYAPP_UPLOAD_KEY_PASSWORD
+                } else {
+                    def keystoreProperties = new Properties()
+                    keystoreProperties.load(new FileInputStream(rootProject.file("keystore.properties")))
 
-                storeFile file(keystoreProperties['storeFile'])
-                storePassword keystoreProperties['storePassword']
-                keyAlias keystoreProperties['keyAlias']
-                keyPassword keystoreProperties['keyPassword']
+                    storeFile file(keystoreProperties['storeFile'])
+                    storePassword keystoreProperties['storePassword']
+                    keyAlias keystoreProperties['keyAlias']
+                    keyPassword keystoreProperties['keyPassword']
+                }
             }
         }
         debug {
@@ -155,13 +163,12 @@ android {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
+            // 有发布密钥就用它，没有就退回 debug 签名 —— 这样 CI 无需任何 secret
+            // 也能产出可安装的 APK（portable 用于测试；正式分发必须配 keystore.properties）。
             // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            signingConfig hasReleaseKeystore ? signingConfigs.release : signingConfigs.debug
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
-
-            signingConfig signingConfigs.release
         }
     }
 
