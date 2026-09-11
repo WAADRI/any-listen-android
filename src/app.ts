@@ -33,9 +33,13 @@ void Promise.all([getFontSize(), windowSizeTools.init()]).then(async([fontSize])
     try {
       handlePushedHomeScreen = await init()
     } catch (err: any) {
+      // 组装一次，同时给对话框与「复制」按钮用
+      const detail = `Boot Log:\n${tryGetBootLog()}\n\n${(err.stack ?? err.message) as string}`
       void tipDialog({
         title: '初始化失败 (Init Failed)',
-        message: `Boot Log:\n${tryGetBootLog()}\n\n${(err.stack ?? err.message) as string}`,
+        message: detail,
+        // Alert 的文本不能选中复制，只能靠这个按钮把堆栈拿出去
+        copyText: detail,
         btnText: 'Exit',
         bgClose: false,
       }).then(() => {
@@ -58,6 +62,7 @@ void Promise.all([getFontSize(), windowSizeTools.init()]).then(async([fontSize])
       void tipDialog({
         title: 'Error',
         message: err.message,
+        copyText: err.stack ?? err.message,
         btnText: 'Exit',
         bgClose: false,
       }).then(() => {
@@ -66,9 +71,11 @@ void Promise.all([getFontSize(), windowSizeTools.init()]).then(async([fontSize])
     })
   })
 }).catch((err) => {
+  const detail = `Boot Log:\n\n${(err.stack ?? err.message) as string}`
   void tipDialog({
     title: '初始化失败 (Init Failed)',
-    message: `Boot Log:\n\n${(err.stack ?? err.message) as string}`,
+    message: detail,
+    copyText: detail,
     btnText: 'Exit',
     bgClose: false,
   }).then(() => {
