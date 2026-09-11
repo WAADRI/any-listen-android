@@ -230,10 +230,17 @@ const ServerSetting = memo(() => {
 
       <View style={styles.actions}>
         <Button onPress={handleTest} disabled={test.kind === 'testing'}>
-          {test.kind === 'testing' ? '测试中…' : '测试连接'}
+          {/* Button 把 children 直接渲染进 Pressable，裸字符串会抛
+              "Text strings must be rendered within a <Text> component"，
+              所以按钮文案必须自己包 Text（与仓库内其他调用点一致）。 */}
+          <Text color={theme['c-button-font']}>
+            {test.kind === 'testing' ? '测试中…' : '测试连接'}
+          </Text>
         </Button>
         <View style={styles.gap} />
-        <Button onPress={handleSave}>保存</Button>
+        <Button onPress={handleSave}>
+          <Text color={theme['c-button-font']}>保存</Text>
+        </Button>
       </View>
 
       {steps.length > 0 ? (
