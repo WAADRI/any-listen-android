@@ -10,6 +10,7 @@ import initCommonState from './common'
 import initAnyListen from './anylisten'
 import { initDeeplink } from './deeplink'
 import { setApiSource } from '@/core/apiSource'
+import { log } from '@/utils/log'
 import commonActions from '@/store/common/action'
 import settingState from '@/store/setting/state'
 import { checkUpdate } from '@/core/version'
@@ -55,6 +56,10 @@ export default async() => {
   // 不 await：连接慢不应阻塞界面启动。门禁由 setApiSource 自行落定
   // （成功置为可用，失败置为不可用并打日志），所以这里也不加 catch ——
   // 加了反而会掩盖失败。
+  //
+  // 这行日志是排查的起点：装到手机上出问题时，先看它有没有出现，
+  // 就能判断是「卡在初始化之前」还是「初始化之后才失败」。
+  log.info('[anylisten] 开始初始化音源')
   setApiSource(setting['common.apiSource'], initAnyListen())
   bootLog('AnyListen providers inited.')
   bootLog('Api inited.')

@@ -22,6 +22,7 @@ import { setupAnyListen, waitForConnected, isConfigured } from '@/utils/anyliste
 import { setupConvert } from '@/utils/anylisten/convert'
 import { setupSource } from '@/utils/musicSdk/anylisten'
 import { normalizeServerUrl, type ConnState } from '@/utils/anylisten/client'
+import { log } from '@/utils/log'
 
 /** 读当前配置。任何异常都退化成「未配置」，避免初始化整体失败。 */
 function readServerUrl(): string {
@@ -49,8 +50,18 @@ export default function initAnyListen(options?: {
 
   setupAnyListen({
     getCredentials: () => ({ serverUrl: getServerUrl(), password: getPassword() }),
-    onStateChange: options?.onStateChange,
-    onError: options?.onError,
+    // 默认把连接状态与错误写进日志。
+    //
+    // 为什么重要：连接问题的表现是**静默**的 —— 界面上只是「没有歌」。
+    // 而本 fork 的包由 CI 产出、装到手机上排查，logcat 基本是唯一通道；
+    // 不接这两个回调的话，服务端连不上时日志里**一个字都没有**。
+    // `log` 最终会 console.log（见 utils/log.ts 的 writeLog），所以能进 logcat。
+    onStateChange: options?.onStateChange ?? ((state: ConnState, detail?: string) => {
+      log.info(`[anylisten] 连接状态 ${state}${detail ? `：${detail}` : ''}`)
+    }),
+    onError: options?.onError ?? ((message: string) => {
+      log.error(`[anylisten] ${message}`)
+    }),
   })
   setupConvert({ getServerUrl })
   setupSource({ getServerUrl })
@@ -58,11 +69,24 @@ export default function initAnyListen(options?: {
   // 未配置服务器时不要发起连接：那只会产生一串无意义的失败重连，
   // 而用户此刻需要的是去设置页填地址。直接拒绝，让门禁保持关闭。
   if (!isConfigured()) {
-    return Promise.reject(new Error('尚未配置 any-listen 服务器地址，请在「设置 → 基础设置」中填写'))
+    const message = '尚未配置 any-listen 服务器地址，请在「设置 → 基础设置」中填写'
+    log.warn(`[anylisten] ${message}`)
+    return Promise.reject(new Error(message))
   }
+
+  // 只记地址，**绝不记密码**：日志会落到手机上的文件，也可能被贴出来排查。
+  log.info(`[anylisten] 服务器地址 ${getServerUrl()}`)
 
   // 必须等**真的**连上：connect() 在 socket open 之前就 resolve 了，
   // 用它当门禁会提前放行，随后播放照样失败。见 waitForConnected 的说明。
-  return waitForConnected().then(() => undefined)
+  return waitForConnected().then(
+    () => { log.info('[anylisten] 已连接，播放门禁已打开') },
+    (err: unknown) => {
+      // 这里必须记：门禁没打开的话所有播放都会失败，而失败提示是
+      // 「source init failed」这种与真实原因无关的文本。
+      log.error(`[anylisten] 连接失败，播放不可用：${err instanceof Error ? err.message : String(err)}`)
+      throw err
+    },
+  )
 }
 
