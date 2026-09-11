@@ -6,10 +6,19 @@
  * 这个文件是**唯一**知道「设置存在哪里」的地方。
  *
  * 初始化顺序很重要：必须在 `setApiSource()` **之前**调用，
- * 因为 `setApiSource` 会立刻读取 `musicSdk.supportQuality` 并触发源的 `init()`。
+ * 因为 `setApiSource` 会读取 `musicSdk.supportQuality`，
+ * 并把播放门禁 `global.lx.apiInitPromise` 接到本函数返回的 promise 上。
+ *
+ * ## 返回值就是播放门禁
+ *
+ * `handleGetOnlineMusicUrl` 等方法开头都是
+ * `if (!await global.lx.apiInitPromise[0]) throw new Error('source init failed')`。
+ * 因此返回的 promise **必须真实反映能否取到数据**：
+ * 未配置服务器时立刻拒绝，配置了就等连接建立。否则用户看到的会是
+ * 「source init failed」这种与真实原因无关的提示。
  */
 import settingState from '@/store/setting/state'
-import { setupAnyListen } from '@/utils/anylisten/api'
+import { setupAnyListen, ensureConnected, isConfigured } from '@/utils/anylisten/api'
 import { setupConvert } from '@/utils/anylisten/convert'
 import { setupSource } from '@/utils/musicSdk/anylisten'
 import { normalizeServerUrl, type ConnState } from '@/utils/anylisten/client'
@@ -34,7 +43,7 @@ function readPassword(): string {
 export default function initAnyListen(options?: {
   onStateChange?: (state: ConnState, detail?: string) => void
   onError?: (message: string) => void
-}): void {
+}): Promise<void> {
   const getServerUrl = readServerUrl
   const getPassword = readPassword
 
@@ -45,4 +54,13 @@ export default function initAnyListen(options?: {
   })
   setupConvert({ getServerUrl })
   setupSource({ getServerUrl })
+
+  // 未配置服务器时不要发起连接：那只会产生一串无意义的失败重连，
+  // 而用户此刻需要的是去设置页填地址。直接拒绝，让门禁保持关闭。
+  if (!isConfigured()) {
+    return Promise.reject(new Error('尚未配置 any-listen 服务器地址，请在「设置 → 基础设置」中填写'))
+  }
+
+  return ensureConnected().then(() => undefined)
 }
+

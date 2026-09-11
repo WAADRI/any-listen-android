@@ -57,24 +57,6 @@ const musicSdk = {
 
 export default musicSdk
 
-/** 初始化所有源。返回的 promise 会被 `global.lx.apiInitPromise` 使用。 */
-export const init = () => {
-  /** @type {Array<Promise<unknown>>} */
-  const tasks = []
-  for (const source of sources) {
-    const sm = musicSdk[source.id]
-    if (sm && sm.init) tasks.push(sm.init())
-  }
-  return Promise.all(tasks)
-}
-
-/**
- * 判断一个标识是否是本 fork 支持的音源。
- * @param {string} source
- * @returns {boolean}
- */
-export const isSupportedSource = (source) => sources.some((s) => s.id === source)
-
 /**
  * 「换个源再试」的兜底。单源情况下**按设计**返回空数组，见文件头说明。
  * @returns {Promise<unknown[]>}

@@ -10,7 +10,6 @@ import { assertApiSupport } from '@/utils/tools'
 import settingState from '@/store/setting/state'
 import { requestMsg } from '@/utils/message'
 import BackgroundTimer from 'react-native-background-timer'
-import { apis } from '@/utils/musicSdk/api-source'
 
 
 const getOtherSourcePromises = new Map()
@@ -151,6 +150,22 @@ export const getCachedLyricInfo = async(musicInfo: LX.Music.MusicInfo): Promise<
   return null
 }
 
+/**
+ * 本地音频文件的取址入口。
+ *
+ * 上游通过 `apis('local')` 拿到本地源的实现，而本 fork 只注册了 any-listen
+ * 一个源、且没有打包任何本地源，所以这里**必然**失败。
+ *
+ * 保留这些函数（而不是删掉）是因为它们仍在本地列表的播放/歌词链路上被引用，
+ * 删掉会牵动 `core/list` 与播放器；而它们只在用户播放
+ * 「本地添加的音频文件」时才会走到 —— 那种文件在本 fork 里根本不会出现。
+ *
+ * 抛出的信息写明原因，避免用户看到上游那句含义模糊的 `Api is not found`。
+ */
+const localSourceUnsupported = (): never => {
+  throw new Error('本版本不提供本地音频文件的播放能力，曲库全部来自 any-listen 服务器')
+}
+
 export const getOnlineOtherSourceMusicUrlByLocal = async(musicInfo: LX.Music.MusicInfoLocal, isRefresh: boolean): Promise<{
   url: string
   quality: LX.Quality
@@ -165,7 +180,7 @@ export const getOnlineOtherSourceMusicUrlByLocal = async(musicInfo: LX.Music.Mus
 
   let reqPromise
   try {
-    reqPromise = apis('local').getMusicUrl(toOldMusicInfo(musicInfo), null).promise
+    reqPromise = localSourceUnsupported()
   } catch (err: any) {
     reqPromise = Promise.reject(err)
   }
@@ -186,7 +201,7 @@ export const getOnlineOtherSourceLyricByLocal = async(musicInfo: LX.Music.MusicI
 
   let reqPromise
   try {
-    reqPromise = apis('local').getLyric(toOldMusicInfo(musicInfo)).promise
+    reqPromise = localSourceUnsupported()
   } catch (err: any) {
     reqPromise = Promise.reject(err)
   }
@@ -203,7 +218,7 @@ export const getOnlineOtherSourcePicByLocal = async(musicInfo: LX.Music.MusicInf
 
   let reqPromise
   try {
-    reqPromise = apis('local').getPic(toOldMusicInfo(musicInfo)).promise
+    reqPromise = localSourceUnsupported()
   } catch (err: any) {
     reqPromise = Promise.reject(err)
   }

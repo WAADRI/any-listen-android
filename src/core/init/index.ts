@@ -49,12 +49,14 @@ export default async() => {
   await initUserApi(setting)
   bootLog('User Api inited.')
 
-  // 必须在 setApiSource 之前：后者会立刻读取 musicSdk.supportQuality
-  // 并触发源的 init()，而那依赖这里注入的配置读取器。
-  initAnyListen()
+  // 必须在 setApiSource 之前：后者会读取 musicSdk.supportQuality，
+  // 并把播放门禁 apiInitPromise 接到这里返回的初始化 promise 上。
+  //
+  // 不 await：连接慢不应阻塞界面启动。门禁由 setApiSource 自行落定
+  // （成功置为可用，失败置为不可用并打日志），所以这里也不加 catch ——
+  // 加了反而会掩盖失败。
+  setApiSource(setting['common.apiSource'], initAnyListen())
   bootLog('AnyListen providers inited.')
-
-  setApiSource(setting['common.apiSource'])
   bootLog('Api inited.')
 
   registerPlaybackService()
