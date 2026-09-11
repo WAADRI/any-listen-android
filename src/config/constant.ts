@@ -101,7 +101,8 @@ export const APP_PROVIDER_NAME = 'cn.toside.music.mobile.provider'
 export const NAV_MENUS = [
   { id: 'nav_search', icon: 'search-2' },
   { id: 'nav_songlist', icon: 'album' },
-  { id: 'nav_top', icon: 'leaderboard' },
+  // 排行榜（nav_top）在上游由各在线音源的榜单接口支撑，而 any-listen 不提供
+  // 榜单能力，留下它只会是一个永远空白的页面。故移除。
   { id: 'nav_love', icon: 'love' },
   // { id: 'download', icon: 'download-2' },
   { id: 'nav_setting', icon: 'setting' },
