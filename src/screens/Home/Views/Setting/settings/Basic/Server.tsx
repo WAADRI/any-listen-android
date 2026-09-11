@@ -101,7 +101,7 @@ const ServerSetting = memo(() => {
     setTest({ kind: 'testing' })
 
     const steps: TestStep[] = []
-    /** 记录一步。只在失败或全部结束时落定 state，避免一次测试触发多次渲染。 */
+    /** 记录一步。只在全部结束时落定 state，避免一次测试触发多次渲染。 */
     const push = (label: string, ok: boolean, detail: string) => {
       steps.push({ label, ok, detail })
     }
@@ -185,6 +185,10 @@ const ServerSetting = memo(() => {
     toast('已保存')
   }, [url, password])
 
+  // 主题里没有 `c-error` 这个键（只有 buildActiveThemeColors 列出的那些），
+  // 取不到会得到 undefined，颜色静默失效。失败态统一用主色以保持可见。
+  const failColor = theme['c-primary-font']
+
   const steps = test.kind === 'done' ? test.steps : []
   const allOk = test.kind === 'done' && steps.length > 0 && steps.every(s => s.ok)
 
@@ -247,17 +251,17 @@ const ServerSetting = memo(() => {
         <View style={styles.result}>
           {steps.map((step, index) => (
             <View key={`${index}-${step.label}`} style={styles.stepRow}>
-              <Text size={13} color={step.ok ? theme['c-primary-font-active'] : theme['c-error']}>
+              <Text size={13} color={step.ok ? theme['c-primary-font-active'] : failColor}>
                 {step.ok ? '✓' : '✗'}
               </Text>
               <Text size={12} style={styles.stepLabel}>{step.label}</Text>
-              <Text size={12} style={[styles.stepDetail, { color: step.ok ? theme['c-font-label'] : theme['c-error'] }]}>
+              <Text size={12} style={[styles.stepDetail, { color: step.ok ? theme['c-font-label'] : failColor }]}>
                 {step.detail}
               </Text>
             </View>
           ))}
           {test.kind === 'done' ? (
-            <Text size={12} style={styles.verdict} color={allOk ? theme['c-primary-font-active'] : theme['c-error']}>
+            <Text size={12} style={styles.verdict} color={allOk ? theme['c-primary-font-active'] : failColor}>
               {allOk ? '全部通过，可以正常使用了' : '存在失败项，请按上面的提示处理'}
             </Text>
           ) : null}
