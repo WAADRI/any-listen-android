@@ -4,6 +4,21 @@
  * 这是本 fork 与上游最大的界面差异：上游的音源是内置的、无需配置，
  * 而这里必须让用户填自己的服务器地址与密码。
  *
+ * ## 输入框为什么这样写
+ *
+ * 两个输入框都走 `settings/components/InputItem`，与「同步」页的服务器地址
+ * 输入框（settings/Sync/IsEnable.tsx）完全一致。这里刻意照抄它，因为那是
+ * 本仓库里唯一经过验证的「服务器地址」输入：
+ *
+ * - 用 `inputMode="url"` 而**不是** `keyboardType="url"`（上游把后者注释掉了）；
+ * - 每个输入框各自 `memo` 成独立组件，打字期间不会层层向上重渲染设置树；
+ * - `onChanged(value, callback)` 只在**失焦 / 键盘收起**时提交，
+ *   而不是每个按键都写一次全局设置（那会让整页反复重渲染，实测日志里
+ *   出现过 `Skipped 80 frames!` 与 `Davey! duration=1865ms`）。
+ *
+ * 因此这里维护 `urlRef` / `passwordRef` 记录「界面上最新的值」，
+ * 点按钮时直接用它们，不必依赖「先失焦才生效」的顺序。
+ *
  * ## 为什么「测试连接」要一路测到真实数据
  *
  * 配置错误的表现全部是**静默**的：地址写错、密码写错、反向代理没转发
@@ -22,10 +37,10 @@
  * 另外 401 与 403 必须区分：连续密码错误会被服务端拉黑 IP，
  * 这是用户必须立刻知道的信息，否则他会反复重试、把封禁时间拖长。
  */
-import { memo, useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useRef, useState } from 'react'
 import { View } from 'react-native'
 
-import Input from '@/components/common/Input'
+import InputItem from '../../components/InputItem'
 import Text from '@/components/common/Text'
 import Button from '@/components/common/Button'
 import { createStyle, toast } from '@/utils/tools'
@@ -76,6 +91,44 @@ function summarizeLists(all: AnyListenMyAllList | undefined): { lists: number, t
   return { lists, tracks }
 }
 
+/**
+ * 服务器地址输入框。
+ *
+ * 单独 memo 成组件，这样打字只重渲染它自己，不会波及设置页其余部分 ——
+ * 照抄 Sync/IsEnable.tsx 里 HostInput 的做法。
+ */
+const UrlInput = memo(({ value, onChange }: { value: string, onChange: (value: string) => void }) => (
+  <InputItem
+    value={value}
+    label="服务器地址"
+    placeholder="https://music.example.com"
+    // 与「同步」页一致：用 inputMode 而不是 keyboardType="url"
+    inputMode="url"
+    onChanged={(text, callback) => {
+      const next = normalizeServerUrl(text)
+      // 把规范化后的值回填到输入框，否则用户看到的是自己输入的原文，
+      // 而实际保存的可能是补过协议头 / 去掉尾斜杠的版本。
+      callback(next)
+      onChange(next)
+    }}
+  />
+))
+
+/** 访问密码输入框。同样独立 memo。 */
+const PasswordInput = memo(({ value, onChange }: { value: string, onChange: (value: string) => void }) => (
+  <InputItem
+    value={value}
+    label="访问密码"
+    placeholder="与网页端登录使用同一个密码"
+    inputMode="text"
+    secureTextEntry
+    onChanged={(text, callback) => {
+      callback(text)
+      onChange(text)
+    }}
+  />
+))
+
 const ServerSetting = memo(() => {
   const theme = useTheme()
   const savedUrl = useSettingValue('anylisten.serverUrl')
@@ -85,15 +138,33 @@ const ServerSetting = memo(() => {
   const [password, setPassword] = useState(savedPassword ?? '')
   const [test, setTest] = useState<TestState>({ kind: 'idle' })
 
-  // 外部（例如导入配置）改了设置时同步回输入框
-  useEffect(() => { setUrl(savedUrl ?? '') }, [savedUrl])
-  useEffect(() => { setPassword(savedPassword ?? '') }, [savedPassword])
+  // 界面上「最新的值」。InputItem 只在失焦时提交，所以不能只读 state ——
+  // 用户输完直接点按钮时 state 可能还是旧值，用 ref 才能拿到刚输入的内容。
+  const urlRef = useRef(url)
+  const passwordRef = useRef(password)
+
+  const handleUrlChange = useCallback((next: string) => {
+    urlRef.current = next
+    setUrl(next)
+  }, [])
+  const handlePasswordChange = useCallback((next: string) => {
+    passwordRef.current = next
+    setPassword(next)
+  }, [])
+
+  // 测试与保存都用「界面上最新的值」并顺手回写 state
+  const current = useCallback(() => {
+    setUrl(urlRef.current)
+    setPassword(passwordRef.current)
+    return { url: urlRef.current, password: passwordRef.current }
+  }, [])
 
   const testSeq = useRef(0)
 
   const handleTest = useCallback(() => {
+    const { url: rawUrl, password: pwd } = current()
     const seq = ++testSeq.current
-    const normalized = normalizeServerUrl(url)
+    const normalized = normalizeServerUrl(rawUrl)
     if (!normalized) {
       setTest({ kind: 'done', steps: [{ label: '服务器地址', ok: false, detail: '请先填写服务器地址' }] })
       return
@@ -110,14 +181,14 @@ const ServerSetting = memo(() => {
       // 用输入框里的值，而不是已保存的值：用户正在测试尚未保存的配置。
       // setupAnyListen 是幂等的注入口，这里覆盖成当前输入即可。
       setupAnyListen({
-        getCredentials: () => ({ serverUrl: normalized, password }),
+        getCredentials: () => ({ serverUrl: normalized, password: pwd }),
       })
       resetSession()
 
       // 1. 握手 —— 验证地址与密码
       const hs = await handshake({
         serverUrl: normalized,
-        password,
+        password: pwd,
         fetchImpl: global.fetch as unknown as typeof fetch,
       })
       if (!hs.ok) {
@@ -171,19 +242,21 @@ const ServerSetting = memo(() => {
       push('未预期的错误', false, oneLine(err instanceof Error ? err.message : String(err)))
       setTest({ kind: 'done', steps })
     })
-  }, [url, password])
+  }, [current])
 
   const handleSave = useCallback(() => {
-    const normalized = normalizeServerUrl(url)
+    const { url: rawUrl, password: pwd } = current()
+    const normalized = normalizeServerUrl(rawUrl)
     updateSetting({
       'anylisten.serverUrl': normalized,
-      'anylisten.password': password,
+      'anylisten.password': pwd,
     })
     // 配置变了就丢弃旧会话，否则会继续用旧地址（表现为「改了地址还在读旧服务器」）
     resetSession()
+    urlRef.current = normalized
     setUrl(normalized)
     toast('已保存')
-  }, [url, password])
+  }, [current])
 
   // 主题里没有 `c-error` 这个键（只有 buildActiveThemeColors 列出的那些），
   // 取不到会得到 undefined，颜色静默失效。失败态统一用主色以保持可见。
@@ -199,38 +272,17 @@ const ServerSetting = memo(() => {
         本应用的歌曲、歌单、封面与歌词全部来自你自己部署的 any-listen 服务器。
       </Text>
 
-      <View style={styles.field}>
-        <Text size={13} style={styles.label}>服务器地址</Text>
-        <Input
-          value={url}
-          onChangeText={setUrl}
-          placeholder="https://music.example.com"
-          autoCorrect={false}
-          keyboardType="url"
-          style={{ ...styles.input, backgroundColor: theme['c-primary-input-background'] }}
-          onClearText={() => { setUrl('') }}
-          clearBtn={!!url}
-        />
-        <Text size={11} style={styles.hint}>
-          需带 http:// 或 https://。挂在反向代理子路径下时写完整路径（例如 https://example.com/music）。
-        </Text>
-      </View>
+      <UrlInput value={url} onChange={handleUrlChange} />
 
-      <View style={styles.field}>
-        <Text size={13} style={styles.label}>访问密码</Text>
-        <Input
-          value={password}
-          onChangeText={setPassword}
-          placeholder="与网页端登录使用同一个密码"
-          autoCorrect={false}
-          secureTextEntry
-          onClearText={() => { setPassword('') }}
-          clearBtn={!!password}
-        />
-        <Text size={11} style={styles.hint}>
-          密码连续输错会被服务端拉黑 IP，请先用「测试连接」确认。
-        </Text>
-      </View>
+      <Text size={11} style={styles.hint}>
+        需带 http:// 或 https://。挂在反向代理子路径下时写完整路径（例如 https://example.com/music）。
+      </Text>
+
+      <PasswordInput value={password} onChange={handlePasswordChange} />
+
+      <Text size={11} style={styles.hint}>
+        密码连续输错会被服务端拉黑 IP，请先用「测试连接」确认。
+      </Text>
 
       <View style={styles.actions}>
         <Button onPress={handleTest} disabled={test.kind === 'testing'}>
@@ -281,38 +333,28 @@ export default ServerSetting
 
 const styles = createStyle({
   container: {
-    // 与同一个 Section 下的其他项（SubTitle）保持一致的缩进
-    paddingLeft: 25,
+    // 注意：不要在这里再加 paddingLeft —— InputItem 自带 paddingLeft: 25 与
+    // marginBottom: 15，否则输入框会比同页其他项多缩进一层。
     paddingRight: 25,
     marginBottom: 18,
   },
   title: {
-    marginLeft: -10,
+    marginLeft: 15,
     marginBottom: 6,
   },
   desc: {
     marginBottom: 16,
     lineHeight: 18,
   },
-  field: {
-    marginBottom: 14,
-  },
-  label: {
-    marginBottom: 6,
-  },
-  input: {
-    borderRadius: 4,
-    paddingLeft: 8,
-    paddingRight: 8,
-  },
   hint: {
     marginTop: 6,
+    marginBottom: 10,
     lineHeight: 16,
   },
   actions: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 4,
+    marginTop: 8,
     marginBottom: 12,
   },
   gap: {
