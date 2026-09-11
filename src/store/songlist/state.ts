@@ -1,4 +1,4 @@
-import music from '@/utils/musicSdk'
+﻿import music from '@/utils/musicSdk'
 
 export declare interface SortInfo {
   name: string
@@ -94,7 +94,7 @@ const state: InitState = {
     limit: 30,
     maxPage: 1,
     key: null,
-    source: 'kw',
+    source: 'anylisten',
     tagId: '',
     sortId: '',
   },
@@ -107,7 +107,7 @@ const state: InitState = {
     limit: 30,
     maxPage: 1,
     key: null,
-    source: 'kw',
+    source: 'anylisten',
     info: {},
   },
 }

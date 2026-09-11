@@ -7,6 +7,7 @@ import initPlayer from './player'
 import dataInit from './dataInit'
 import initSync from './sync'
 import initCommonState from './common'
+import initAnyListen from './anylisten'
 import { initDeeplink } from './deeplink'
 import { setApiSource } from '@/core/apiSource'
 import commonActions from '@/store/common/action'
@@ -47,6 +48,11 @@ export default async() => {
 
   await initUserApi(setting)
   bootLog('User Api inited.')
+
+  // 必须在 setApiSource 之前：后者会立刻读取 musicSdk.supportQuality
+  // 并触发源的 init()，而那依赖这里注入的配置读取器。
+  initAnyListen()
+  bootLog('AnyListen providers inited.')
 
   setApiSource(setting['common.apiSource'])
   bootLog('Api inited.')

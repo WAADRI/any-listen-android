@@ -1,4 +1,4 @@
-import music from '@/utils/musicSdk'
+﻿import music from '@/utils/musicSdk'
 
 
 // import { deduplicationList } from '@common/utils/renderer'
@@ -25,7 +25,7 @@ export interface InitState {
 
 const state: InitState = {
   searchText: '',
-  source: 'kw',
+  source: 'anylisten',
   sources: [],
   listInfos: {
     all: {

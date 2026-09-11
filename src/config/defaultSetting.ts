@@ -2,7 +2,7 @@ const defaultSetting: LX.AppSetting = {
   version: '2.0',
   'common.isAutoTheme': false,
   'common.langId': null,
-  'common.apiSource': '',
+  'common.apiSource': 'anylisten',
   'common.sourceNameType': 'alias',
   'common.shareType': 'system',
   'common.isAgreePact': false,
@@ -71,6 +71,12 @@ const defaultSetting: LX.AppSetting = {
   'download.fileName': '歌名 - 歌手',
 
   'sync.enable': false,
+
+  // any-listen 服务器。本 fork 唯一的曲库来源。
+  // 地址形如 https://music.example.com（可带反代子路径，不要以斜杠结尾）。
+  'anylisten.serverUrl': '',
+  // 访问密码。与 Web 端登录用的是同一个密码。
+  'anylisten.password': '',
 
   // 'theme.id': 'blue_plus',
   'theme.id': 'green',

@@ -129,20 +129,23 @@ export const MUSIC_TOGGLE_MODE_LIST = [
 ] as const
 
 export const DEFAULT_SETTING = {
+  // leaderboard 与 songList 对应的服务端能力（排行榜、在线歌单广场）any-listen 不提供，
+  // 本 fork 也不会展示这两个界面。这里仍然把源改成 anylisten，
+  // 只是为了「读回来的旧设置里还是 'kw'」这种情况能落到一个有效值上。
   leaderboard: {
-    source: 'kw' as LX.OnlineSource,
-    boardId: 'kw__16',
+    source: 'anylisten' as LX.OnlineSource,
+    boardId: '',
   },
 
   songList: {
-    source: 'kw' as LX.OnlineSource,
+    source: 'anylisten' as LX.OnlineSource,
     sortId: 'new',
     tagName: '',
     tagId: '',
   },
 
   search: {
-    temp_source: 'kw' as LX.OnlineSource,
+    temp_source: 'anylisten' as LX.OnlineSource,
     source: 'all' as LX.OnlineSource | 'all',
     type: 'music' as 'music' | 'songlist',
   },

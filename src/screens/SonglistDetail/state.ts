@@ -1,11 +1,11 @@
-import { type ListInfoItem } from '@/store/songlist/state'
+﻿import { type ListInfoItem } from '@/store/songlist/state'
 import { createContext, useContext } from 'react'
 
 export const ListInfoContext = createContext<ListInfoItem>({
   id: '',
   author: '',
   name: '',
-  source: 'kw',
+  source: 'anylisten',
 })
 
 export const useListInfo = () => {
