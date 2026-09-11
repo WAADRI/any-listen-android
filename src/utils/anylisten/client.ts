@@ -392,9 +392,30 @@ export class AnyListenSession {
   /**
    * 发起一次 RPC。
    *
-   * `path` 传入**裸方法名**（如 `'getAllUserLists'`），不接受 `'list.getAllUserLists'`：
-   * 服务端是平铺工厂，写成点号路径会让服务端抛 `ReferenceError`，
+   * `name` 传入**裸方法名**（如 `'getAllUserLists'`），不接受 `'list.getAllUserLists'`：
+   * 服务端是平铺工厂，写成点号路径会让服务端在 `undefined` 上取属性，
    * 报错文本是字面的 `list is not defined`，且**每一个**调用都失败。
+   *
+   * ## 参数必须放在 `args`，绝不能并进方法名
+   *
+   * 这个签名（方法名单独一个参数、其余是真实参数）**必须**保持，
+   * 因为它直接决定帧里 path 与 args 的分离：
+   *
+   * ```
+   * call('getListMusics', listId)
+   *   -> [0, callId, ['getListMusics'], [listId], []]
+   * ```
+   *
+   * 一旦调用方写成 `call(['getListMusics', listId])` 之类把参数并入 path 的形态，
+   * 服务端会遍历 path 到第二段并在 exposeObj 上取属性得到 undefined，
+   * 返回 **`<listId> is not defined`**。
+   *
+   * ⚠️ 那个报错极具误导性：它看起来像「服务端不认识这个 listId」或
+   * 「该歌单不存在」，很容易据此得出「服务端没有这个能力」的错误结论。
+   * 本项目的开发过程中就曾被它误导过一轮 —— 真相只是调用方把 path
+   * 与 args 写混了，服务端侧完全正常。
+   *
+   * 回归测试见 `wire.test.ts` 的「path 只有一段时应保持单段」用例。
    */
   call<T = unknown>(name: string, ...args: unknown[]): Promise<T> {
     return new Promise<T>((resolve, reject) => {
