@@ -66,3 +66,8 @@ buck-out/
 
 # testing
 /coverage
+
+# 本地临时提交信息文件（用 `git commit -F <file>` 传多行信息时产生）。
+# 之所以要忽略：`git add -A` 会把它们一并提交进去，本项目已经发生过一次。
+/.commitmsg*
+
