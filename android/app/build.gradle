@@ -102,6 +102,13 @@ def verCode = npmPackageJson["versionCode"]
 def verName = npmPackageJson["version"]
 def applicationName = npmPackageJson["name"]
 
+// 是否具备发布密钥。必须在 android { } 这一层声明：
+// Groovy 里 def 写在 signingConfigs { } 闭包内只是那个闭包的局部变量，
+// buildTypes { } 里访问不到，会被当成 BuildType 的属性去解析，报
+// "Could not get unknown property 'hasReleaseKeystore'"。
+def hasReleaseKeystore = project.hasProperty('MYAPP_UPLOAD_STORE_FILE') ||
+    rootProject.file('keystore.properties').exists()
+
 android {
     ndkVersion rootProject.ext.ndkVersion
 
@@ -131,8 +138,6 @@ android {
         // 上游的写法是在这里无条件 new FileInputStream(keystore.properties)，
         // 于是缺少该文件时整个配置阶段就抛异常（"No such file or directory"），
         // 连 debug 构建都做不了。CI 与本地开发都没有这个文件，所以改成按需创建。
-        def hasReleaseKeystore = project.hasProperty('MYAPP_UPLOAD_STORE_FILE') ||
-            rootProject.file('keystore.properties').exists()
         if (hasReleaseKeystore) {
             release {
                 if (project.hasProperty('MYAPP_UPLOAD_STORE_FILE')) {
