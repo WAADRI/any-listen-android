@@ -1,0 +1,63 @@
+name: Build APK
+
+# 上游自带的 release.yml / beta-pack.yml 只在 master / beta 上触发，且会引用
+# KEYSTORE_* secrets —— 本 fork 没有这些 secrets，base64 解码空字符串会写出一个
+# 名叫 app/ 的垃圾文件并让构建失败。所以这里用一份不依赖任何 secret 的构建流程。
+on:
+  push:
+    branches:
+      - 'feat/**'
+      - 'fix/**'
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  apk:
+    name: Build universal APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out git repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          # 上游 .nvmrc 固定 Node 18（已 EOL）；20 与 RN 0.73 的工具链兼容。
+          node-version: '20'
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build release APK
+        env:
+          # 上游的构建流程都设了这个开关，保持一致。
+          DISABLE_SVG: 1
+        shell: bash
+        run: |
+          cd android
+          # 不加任何 -PMYAPP_* 参数：此时 app/build.gradle 会回落到 debug 签名，
+          # 产出可安装的 APK。正式分发需要自己的 keystore，见 README。
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Show produced APKs
+        shell: bash
+        run: |
+          ls -la android/app/build/outputs/apk/release/ || true
+
+      - name: Upload universal APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: anylisten-lx-universal-apk
+          path: android/app/build/outputs/apk/release/*universal*.apk
+          if-no-files-found: error
+          retention-days: 30
