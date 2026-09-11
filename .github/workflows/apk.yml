@@ -15,9 +15,31 @@ on:
   workflow_dispatch:
 
 jobs:
+  # 协议层的单测。单独一个 job 且不装依赖，因此只要几秒就能给出反馈 ——
+  # APK 构建要 8 分钟左右，让明显的错误排在它前面失败。
+  unit-test:
+    name: Protocol unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out git repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          # 需要 Node 22.6+ 才能直接运行 .ts（类型擦除）；本仓库本地用 24。
+          # 这与下面 apk job 的 Node 20 是刻意的差别，两者互不影响。
+          node-version: '24'
+
+      - name: Run protocol unit tests
+        # 不需要 npm ci：被测模块刻意做成零依赖（不 import react-native），
+        # 测试脚本还给 Node 补了一个把无扩展名导入解析到 .ts 的钩子。
+        run: npm test
+
   apk:
     name: Build universal APK
     runs-on: ubuntu-latest
+    needs: unit-test
     steps:
       - name: Check out git repository
         uses: actions/checkout@v4
