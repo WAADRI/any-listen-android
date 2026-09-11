@@ -1,12 +1,26 @@
-import { compareVer } from '@/utils'
-import { downloadNewVersion, getVersionInfo } from '@/utils/version'
 import versionActions from '@/store/version/action'
 import versionState, { type InitState } from '@/store/version/state'
-import { getIgnoreVersion, getIgnoreVersionFailTipTime, saveIgnoreVersion, saveIgnoreVersionFailTipTime } from '@/utils/data'
+import { saveIgnoreVersion } from '@/utils/data'
 import { showVersionModal } from '@/navigation'
 import { Navigation } from 'react-native-navigation'
-import { toast } from '@/utils/tools'
 
+/**
+ * ## 本 fork 关闭了「检查更新」
+ *
+ * `utils/version.js` 里写死了**上游项目**的七个版本源
+ * （lyswhut/lx-music-mobile 的 raw.githubusercontent / jsdelivr / gitee 等），
+ * 而 `downloadNewVersion` 更是直接从
+ * `github.com/lyswhut/lx-music-mobile/releases/...` 下载 apk。
+ *
+ * 对一个 fork 来说这有两个问题：
+ *
+ * 1. **会装错应用**：它拿到的是上游的版本号与上游的 apk，用户一点「更新」
+ *    就把 lx-music-mobile 覆盖安装上来了；
+ * 2. **无谓的外发**：每次启动都会去访问上游仓库，而这个包并不由那里分发。
+ *
+ * 因此不再发起检查。状态直接置为「已是最新」，让版本界面不显示错误。
+ * 如果将来要给这个 fork 做更新，应当改成自己的发布地址，而不是恢复这些常量。
+ */
 export const showModal = () => {
   if (versionState.showModal) return
   versionActions.setVisibleModal(true)
@@ -20,67 +34,22 @@ export const hideModal = (componentId: string) => {
 }
 
 export const checkUpdate = async() => {
-  versionActions.setVersionInfo({ status: 'checking' })
-  let versionInfo: InitState['versionInfo'] = { ...versionState.versionInfo }
-  try {
-    const { version, desc, history } = await getVersionInfo()
-    versionInfo.newVersion = {
-      version,
-      desc,
-      history,
-    }
-  } catch (err) {
-    versionInfo.newVersion = {
-      version: '0.0.0',
+  versionActions.setVersionInfo({
+    status: 'idle',
+    isLatest: true,
+    isUnknown: false,
+    // 用当前版本号作为占位，界面显示「已是最新」，不再是「未知」或报错
+    newVersion: {
+      version: versionState.versionInfo.version,
       desc: '',
       history: [],
-    }
-  }
-  // const versionInfo = {
-  //   version: '1.9.0',
-  //   desc: '- 更新xxx\n- 修复xxx123的萨达修复xxx123的萨达修复xxx123的萨达修复xxx123的萨达修复xxx123的萨达',
-  //   history: [{ version: '1.8.0', desc: '- 更新xxx22\n- 修复xxx22' }, { version: '1.7.0', desc: '- 更新xxx22\n- 修复xxx22' }],
-  // }
-  if (versionInfo.newVersion.version == '0.0.0') {
-    versionInfo.isUnknown = true
-    versionInfo.status = 'error'
-  } else {
-    versionInfo.status = 'idle'
-    versionInfo.isUnknown = false
-    if (compareVer(versionInfo.version, versionInfo.newVersion.version) != -1) {
-      versionInfo.isLatest = true
-    }
-  }
-
-  versionActions.setVersionInfo(versionInfo)
-
-  if (!versionInfo.isLatest) {
-    if (versionInfo.isUnknown) {
-      const time = await getIgnoreVersionFailTipTime()
-      if (Date.now() - time < 7 * 86400000) return
-      saveIgnoreVersionFailTipTime(Date.now())
-      toast(global.i18n.t('version_tip_unknown'))
-    } else if (versionInfo.newVersion.version != await getIgnoreVersion()) {
-      showModal()
-    }
-  }
-  // console.log(compareVer(process.versions.app, versionInfo.version))
-  // console.log(process.versions.app, versionInfo.version)
+    },
+  })
 }
 
 export const downloadUpdate = () => {
-  versionActions.setVersionInfo({ status: 'downloading' })
-  versionActions.setProgress({ total: 0, current: 0 })
-
-  downloadNewVersion(versionState.versionInfo.newVersion!.version, (total: number, current: number) => {
-    // console.log(total, current)
-    versionActions.setProgress({ total, current })
-  }).then(() => {
-    versionActions.setVersionInfo({ status: 'downloaded' })
-  }).catch(() => {
-    versionActions.setVersionInfo({ status: 'error' })
-    // console.log(err)
-  })
+  // 不再下载：上游地址会装错应用，见 checkUpdate 的说明。
+  versionActions.setVersionInfo({ status: 'error' })
 }
 
 
