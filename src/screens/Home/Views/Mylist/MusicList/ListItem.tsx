@@ -1,4 +1,4 @@
-import { memo, useRef, useEffect } from 'react'
+import { memo, useRef } from 'react'
 import { View, TouchableOpacity } from 'react-native'
 import { LIST_ITEM_HEIGHT } from '@/config/constant'
 // import { BorderWidths } from '@/theme'
@@ -30,19 +30,6 @@ export default memo(({ item, index, activeIndex, onPress, onShowMenu, onLongPres
   const isSelected = selectedList.includes(item)
   // console.log(item.name, selectedList, selectedList.includes(item))
   const isSupported = useAssertApiSupport(item.source)
-  // 诊断：曲目被置灰（opacity 0.5）时说明 assertApiSupport 判定「音源不可用」。
-  // 那个判定读的是 `global.lx.qualityList[source]`，所以这里把实际的 source 与
-  // 已知音源打出来，便于区分「source 存错了」还是「qualityList 没发布」。
-  useEffect(() => {
-    if (isSupported) return
-    const list = global.lx.qualityList ?? {}
-    console.log(
-      `[anylisten] 曲目被判定为不可播放：source=${JSON.stringify(item.source)}`
-      + ` 该源的音质档=${JSON.stringify((list as Record<string, unknown>)[item.source])}`
-      + ` qualityList全部键=${JSON.stringify(Object.keys(list))}`
-      + ` name=${item.name ?? ''}`,
-    )
-  }, [isSupported, item.source, item.name])
   const moreButtonRef = useRef<TouchableOpacity>(null)
   const handleShowMenu = () => {
     if (moreButtonRef.current?.measure) {

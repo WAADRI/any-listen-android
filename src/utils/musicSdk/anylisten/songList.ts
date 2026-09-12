@@ -143,13 +143,17 @@ function fetchCover(listId: string, serverUrl: string): Promise<string> {
   const task = getListCover(listId)
     .then((cover) => {
       const resolved = resolveServerUrl(cover, serverUrl) ?? ''
-      // 诊断：歌单封面这条链路也曾经"看起来实现了却什么都没有"，
-      // 所以把「拿到什么、解析成什么」打出来，避免再一次靠猜。
-      console.log(`[anylisten] 歌单封面 ${listId}：${cover === null ? '服务端返回 null（空歌单）' : cover} → ${resolved || '（解析失败）'}`)
+      // 只在**解析不出来**时记录：服务端返回 null 表示空歌单（正常），
+      // 解析出空串才是真的有问题（曾经整条封面链路"看起来实现了却什么都没有"，
+      // 靠这个信号才定位到 `serverUrl` 取不到值）。成功路径不再打日志：
+      // 每次刷新歌单都会刷出几十行，把真正有用的日志淹掉。
+      if (!resolved && cover != null) {
+        console.warn(`[anylisten] 歌单封面 ${listId} 解析失败：${cover}`)
+      }
       return resolved
     })
     .catch((err: unknown) => {
-      console.log(`[anylisten] 歌单封面 ${listId} 失败：${err instanceof Error ? err.message : String(err)}`)
+      console.warn(`[anylisten] 歌单封面 ${listId} 获取失败：${err instanceof Error ? err.message : String(err)}`)
       return ''
     })
   coverCache.set(key, task)

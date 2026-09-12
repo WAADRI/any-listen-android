@@ -156,18 +156,19 @@ export function fetchLyric(oldMusicInfo: any) {
     if (!lyric) throw new Error('服务端返回了空歌词')
 
     /**
-     * 诊断：歌词取到了什么。
+     * 歌词没有时间戳时必须留一条日志。
      *
      * 歌词整条链路的失败**全是静默的**：`core/music/utils.ts` 的时间戳校验
-     * 失败只会 `console.log(err)`（手机上看不到），`buildLyricInfo` 也不报错，
-     * 界面最后就是一片空白。所以这里把关键事实打出来：长度、是否带时间戳、
-     * 首行内容。有了它就能区分「服务端没给」「格式不对」「链路丢了」。
+     * 失败只做 `console.log(err)`（手机上看不到），`buildLyricInfo` 也不报错，
+     * 界面最后就是一片空白。所以「取到了但没有时间戳」这种必然会被丢掉的情况
+     * 一律告警。取歌词成功时不再打日志（每首歌都刷一行，没有信息量）。
      */
-    const hasTimestamp = /\[\d{1,2}:\d{2}/.test(lyric)
-    console.log(
-      `[anylisten] 歌词诊断：${raw.name ?? '?'} 长度=${lyric.length}`
-      + ` 带时间戳=${hasTimestamp} 首行=${JSON.stringify((lyric.split('\n')[0] ?? '').slice(0, 40))}`,
-    )
+    if (!/\[\d{1,2}:\d{2}/.test(lyric)) {
+      console.warn(
+        `[anylisten] 歌词没有时间戳，将被丢弃：${raw.name ?? '?'} 长度=${lyric.length}`
+        + ` 首行=${JSON.stringify((lyric.split('\n')[0] ?? '').slice(0, 40))}`,
+      )
+    }
 
     return {
       lyric,
