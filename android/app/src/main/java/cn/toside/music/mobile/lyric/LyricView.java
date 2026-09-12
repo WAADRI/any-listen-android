@@ -255,6 +255,10 @@ public class LyricView extends Activity implements View.OnTouchListener {
 
   private void createTextView() {
     textView = new LyricSwitchView(reactContext, isSingleLine, isShowToggleAnima);
+    textView.setPlayer(player);
+    // 重建悬浮窗时，当前这一行的逐字信息要跟着上屏（`setText` 会把它交给真正显示的 view），
+    // 否则新窗口的第一行没有扫光，得等下一行才恢复
+    textView.setWordLyric(currentWordSegments, currentWordLineTime, player);
     textView.setText("");
     textView.setText(currentLyric);
 
@@ -378,14 +382,23 @@ public class LyricView extends Activity implements View.OnTouchListener {
   }
 
   public void setLyric(String text, ArrayList<String> extendedLyrics, List<WordLyric.Segment> wordSegments, int wordLineTime) {
-    if (text.equals("") && text.equals(currentLyric) && extendedLyrics.size() == 0) return;
+    // 同一行就不要再 setText：`TextSwitcher` 每次 setText 都会播一遍换行动画
+    // （`inAnim("top")` 是从下往上移），而「暂停 → 播放」时播放器会把**当前这一行**
+    // 重新报一次，用户看到的就是「一恢复播放，桌面歌词就往上翻一下」。
+    //
+    // 逐字时间也要一起比：副歌里同一句会重复出现（正文一样、行时间不同），
+    // 那种情况必须重新 setText，否则扫光会拿上一次的时间去扫。
+    boolean isSameLine = text.equals(currentLyric)
+      && extendedLyrics.equals(currentExtendedLyrics)
+      && wordLineTime == currentWordLineTime;
     currentLyric = text;
     currentExtendedLyrics = extendedLyrics;
     currentWordSegments = wordSegments;
     currentWordLineTime = wordLineTime;
     if (textView == null) return;
-    // 先给逐字信息、再 setText：`LyricSwitchView.setText` 会把它写到真正要显示的那个 view 上
+    // 逐字信息总是要同步给当前 view（恢复播放后扫光要接着走），只是不要再 setText
     textView.setWordLyric(wordSegments, wordLineTime, player);
+    if (isSameLine) return;
     if (extendedLyrics.size() > 0 && maxLineNum > 1 && !isSingleLine) {
       int num = maxLineNum - 1;
       StringBuilder textBuilder = new StringBuilder(text);
