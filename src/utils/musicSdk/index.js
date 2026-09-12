@@ -33,12 +33,17 @@
  * 音质**数组**本身，导致整个曲库灰显 —— 因此这里的一层结构必须搭配
  * `toQualityList(apiId, supportQuality[apiId])` 使用（见 `qualityList.ts`）。
  *
- * ## 保留 findMusic / searchMusic 的理由
+ * ## 保留 findMusic 的理由
  *
  * 上游的 `findMusic` 是「这首歌取不到就去别的源碰运气」的兜底，
  * 它在 `core/music/utils.ts` 的取址失败分支里**仍在关键路径上**。
  * 单源情况下它只会返回空数组，调用方随即放弃兜底并抛出原始错误 ——
  * 这正是我们想要的行为（失败就明确失败，不要瞎猜）。
+ *
+ * 上游的 `searchMusic`（跨源搜索聚合）**已删除**：它唯一的消费者是
+ * 「歌曲换源」弹窗（`MusicToggleModal`），而换源在多源场景才有意义，
+ * 本 fork 已把该弹窗连同菜单项一起删掉。单源搜索走的是
+ * `musicSdk[source].musicSearch`，与它无关。
  */
 import anylisten, { supportQualitys } from './anylisten'
 
@@ -69,10 +74,4 @@ export default musicSdk
  * @returns {Promise<unknown[]>}
  */
 export const findMusic = async() => []
-
-/**
- * 上游的跨源搜索聚合。单源情况下没有可聚合的对象。
- * @returns {Promise<unknown[]>}
- */
-export const searchMusic = async() => []
 

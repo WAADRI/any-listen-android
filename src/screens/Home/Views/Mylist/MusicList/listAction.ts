@@ -1,5 +1,5 @@
-import { addListMusics, removeListMusics, updateListMusicPosition, updateListMusics } from '@/core/list'
-import { playList, playListById, playNext } from '@/core/player/player'
+import { removeListMusics, updateListMusicPosition, updateListMusics } from '@/core/list'
+import { playList, playNext } from '@/core/player/player'
 import { addTempPlayList } from '@/core/player/tempPlayList'
 import settingState from '@/store/setting/state'
 import { similar, sortInsert, toOldMusicInfo } from '@/utils'
@@ -10,7 +10,6 @@ import playerState from '@/store/player/state'
 import type { SelectInfo } from './ListMenu'
 import { type Metadata } from '@/components/MetadataEditModal'
 import musicSdk from '@/utils/musicSdk'
-import { getListMusicSync } from '@/utils/listManage'
 import { clearMusicUrlByMusic } from '@/utils/data'
 
 export const handlePlay = (listId: SelectInfo['listId'], index: SelectInfo['index']) => {
@@ -144,32 +143,6 @@ export const handleDislikeMusic = async(musicInfo: SelectInfo['musicInfo']) => {
   }
 }
 
-export const handleToggleSource = async(listId: string, musicInfo: LX.Music.MusicInfo, toggleMusicInfo: LX.Music.MusicInfoOnline) => {
-  const list = getListMusicSync(listId)
-  const oldId = musicInfo.id
-  let oldIdx = list.findIndex(m => m.id == oldId)
-  if (oldIdx < 0) {
-    void addListMusics(listId, [toggleMusicInfo], settingState.setting['list.addMusicLocationType'])
-    return true
-  }
-  const id = toggleMusicInfo.id
-  const index = list.findIndex(m => m.id == id)
-  const removeIds = [oldId]
-  if (index > -1) {
-    if (!await confirmDialog({
-      message: global.i18n.t('music_toggle__duplicate_tip'),
-      cancelButtonText: global.i18n.t('dialog_cancel'),
-      confirmButtonText: global.i18n.t('dialog_confirm'),
-    })) return false
-    removeIds.push(id)
-  }
-  void removeListMusics(listId, removeIds).then(async() => {
-    await addListMusics(listId, [toggleMusicInfo], 'bottom')
-    if (index != -1 && index < oldIdx) oldIdx--
-    await updateListMusicPosition(listId, oldIdx, [id])
-    if (playerState.playMusicInfo.listId == listId && playerState.playMusicInfo.musicInfo?.id == oldId) {
-      void playListById(listId, toggleMusicInfo.id)
-    }
-  })
-  return true
-}
+// `handleToggleSource`（歌曲换源）已随菜单项一起删除：
+// 它做的是「用另一平台的同名曲目替换当前曲目」，本 fork 只有单一自建音源，
+// 没有可换的目标源。相关的 `MusicToggleModal` 组件也一并删除。

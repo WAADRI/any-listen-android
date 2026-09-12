@@ -76,13 +76,20 @@ function exportedNames(source: string): Set<string> {
   return names
 }
 
-/** 找出所有 `import { ... } from '@/utils/musicSdk'` 的调用点及其要求的具名成员。 */
+/** 找出所有从注册表具名导入的调用点及其要求的具名成员。 */
 function requiredNames(files: string[]): Array<{ file: string, names: string[] }> {
   const out: Array<{ file: string, names: string[] }> = []
   for (const file of files) {
     const source = readFileSync(file, 'utf8')
-    // 只匹配**恰好**指向注册表本体的导入（排除 '@/utils/musicSdk/...' 子路径）
-    const re = /import\s*\{([^}]*)\}\s*from\s*'@\/utils\/musicSdk'/g
+    // 只匹配**恰好**指向注册表本体的导入（排除 '@/utils/musicSdk/...' 子路径）。
+    // 同时匹配两种写法：
+    //   import { a } from '@/utils/musicSdk'
+    //   import def, { a } from '@/utils/musicSdk'
+    // 旧正则只认前者，于是 `core/music/utils.ts` 的
+    // `import musicSdk, { findMusic } from '@/utils/musicSdk'` 一直没被扫到。
+    // 这个漏洞是被「唯一使用 `import { searchMusic }` 的文件（换源弹窗）被删除」
+    // 暴露出来的：消费者列表直接变空，触发了下面那条「本用例已失效」断言。
+    const re = /import\s+(?:[A-Za-z_$][\w$]*\s*,\s*)?\{([^}]*)\}\s*from\s*'@\/utils\/musicSdk'/g
     for (const m of source.matchAll(re)) {
       const names = m[1]
         .split(',')
@@ -118,10 +125,23 @@ test('注册表导出了所有调用点要求的具名成员', () => {
   )
 })
 
-test('注册表仍然导出 findMusic / searchMusic（core/music/utils.ts 依赖）', () => {
+test('注册表仍然导出 findMusic（core/music/utils.ts 的取址兜底路径依赖）', () => {
   const exported = exportedNames(readFileSync(REGISTRY, 'utf8'))
   assert.ok(exported.has('findMusic'), 'findMusic 不再导出')
-  assert.ok(exported.has('searchMusic'), 'searchMusic 不再导出')
+})
+
+/**
+ * 反向断言：`searchMusic` **不再**导出。
+ *
+ * 它唯一的消费者是「歌曲换源」弹窗（已随单源化删除）。若将来有人把多源
+ * 能力加回来，这条会提醒他确认聚合搜索的调用点是否也要恢复。
+ */
+test('注册表不导出 searchMusic（跨源聚合只剩单源，且换源 UI 已删除）', () => {
+  const exported = exportedNames(readFileSync(REGISTRY, 'utf8'))
+  assert.ok(
+    !exported.has('searchMusic'),
+    '注册表又导出了 searchMusic：请确认是否真的存在消费它的调用点，并更新本断言',
+  )
 })
 
 test('适配器导出界面直接调用所需的方法', () => {
