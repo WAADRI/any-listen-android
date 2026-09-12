@@ -26,9 +26,23 @@ import settingState from '@/store/setting/state'
 import playerState from '@/store/player/state'
 import { tranditionalize } from '@/utils/simplify-chinese-main'
 import { getPosition } from '@/plugins/player'
+import { parseAwlrc, toNativeWordLines } from '@/utils/awlrc'
 export {
   onLyricLinePlay,
 } from '@/utils/nativeModules/lyricDesktop'
+
+/**
+ * 桌面歌词（原生悬浮窗）用的逐字信息。
+ *
+ * 解析照旧在 JS 侧做（`parseAwlrc` 有单测与真实数据样本），只把结果交给原生。
+ * 注意「转简体/繁体」必须**先转再解析**：原生那边显示的是转换后的正文，逐字段也
+ * 得是转换后的，否则 `WordLyric.findLine` 的正文校验会对不上，扫光直接不出现。
+ */
+const buildWordLines = (awlrc: string | null | undefined) => {
+  if (!awlrc) return []
+  const source = settingState.setting['player.isS2t'] ? tranditionalize(awlrc) : awlrc
+  return toNativeWordLines(parseAwlrc(source))
+}
 
 export const showDesktopLyric = async() => {
   const setting = settingState.setting
@@ -55,7 +69,7 @@ export const showDesktopLyric = async() => {
     lrc = tranditionalize(lrc)
     tlrc = tranditionalize(tlrc)
   }
-  await setLyric(lrc, tlrc, rlrc)
+  await setLyric(lrc, tlrc, rlrc, buildWordLines(playerState.musicInfo.lxlrc))
   if (playerState.isPlay && !global.lx.gettingUrlId) {
     void getPosition().then(position => {
       void play(position * 1000)
@@ -69,7 +83,12 @@ export const hideDesktopLyric = async() => {
 
 export const playDesktopLyric = play
 export const pauseDesktopLyric = pause
-export const setDesktopLyric = setLyric
+/**
+ * 设置桌面歌词的歌词与逐字信息（`core/lyric.ts` 换歌时调它）
+ */
+export const setDesktopLyric = async(lyric: string, translation = '', romalrc = '', awlrc = '') => {
+  return setLyric(lyric, translation, romalrc, buildWordLines(awlrc))
+}
 export const setDesktopLyricPlaybackRate = setPlaybackRate
 export const toggleDesktopLyricTranslation = toggleTranslation
 export const toggleDesktopLyricRoma = toggleRoma
@@ -105,7 +124,7 @@ export const showRemoteLyric = async(isSend: boolean) => {
       lrc = tranditionalize(lrc)
       tlrc = tranditionalize(tlrc)
     }
-    await setLyric(lrc, tlrc, rlrc)
+    await setLyric(lrc, tlrc, rlrc, buildWordLines(playerState.musicInfo.lxlrc))
     if (playerState.isPlay && !global.lx.gettingUrlId) {
       void getPosition().then(position => {
         void play(position * 1000)

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { parseAwlrc, parseTimeLabel, playedCount, findAwlrcLine, awlrcOf } from './awlrc'
+import { parseAwlrc, parseTimeLabel, playedCount, findAwlrcLine, awlrcOf, lineStyleKind } from './awlrc'
 
 // 下面这段是**服务端真实返回**的 awlyric（`tools/ws-dump-awlrc.mjs` 原样 dump，
 // 曲目：2026一定会幸福 (女声版) - 諾然）。断言值全部按这段真实数据写死，
@@ -132,6 +132,20 @@ test('findAwlrcLine 传了正文就要求正文一致（防止错位后涂错行
   assert.equal(findAwlrcLine(aw, 0, 2223, '不是这一行'), undefined)
   // 时间命中且正文一致 → 返回
   assert.equal(findAwlrcLine(aw, 0, 2223, '词：諾然')?.text, '词：諾然')
+})
+
+test('lineStyleKind：当前行扫光、唱过的行保持已唱色、之后的行才是普通色', () => {
+  // 当前行
+  assert.equal(lineStyleKind(3, 3, true), 'active')
+  // 唱过的逐字行：不能退回普通色（真机上就是「扫光被擦掉」）
+  assert.equal(lineStyleKind(2, 3, true), 'sung')
+  assert.equal(lineStyleKind(0, 3, true), 'sung')
+  // 还没唱到的行
+  assert.equal(lineStyleKind(4, 3, true), 'idle')
+  // 没有逐字信息的行：无论前后都按普通行处理
+  assert.equal(lineStyleKind(2, 3, false), 'idle')
+  // 还没开始唱（当前行是 -1）时全都是普通行
+  assert.equal(lineStyleKind(0, -1, true), 'idle')
 })
 
 test('awlrcOf 只在字段确实是字符串时取值', () => {

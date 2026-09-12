@@ -153,6 +153,31 @@ export function awlrcOf(info: Pick<AnyListenLyricInfo, 'awlyric'> | null | undef
   return typeof info?.awlyric === 'string' ? info.awlyric : ''
 }
 
+/** 原生桌面歌词需要的逐字信息：`[[行时间, [[段起始, 段时长, 段文字], ...], 行正文], ...]` */
+export type NativeWordLine = [number, [number, number, string][], string]
+
+/**
+ * 转成原生悬浮歌词窗口用的嵌套数组。
+ *
+ * 桌面歌词是原生控件（`android/.../lyric/LyricModule.java`），它自己按 LRC 切行、
+ * 自己走时钟，所以要把「每行的逐字段」交给它。**解析仍然在 JS 侧做**（这里有单测与
+ * 真实数据样本），原生只负责按时间把位置画出来——两边别各写一份解析器。
+ *
+ * 没有逐字信息的行不传：那些行本来就该整行上色。
+ */
+export function toNativeWordLines(awlrc: Awlrc): NativeWordLine[] {
+  const lines: NativeWordLine[] = []
+  for (const line of awlrc.lines) {
+    if (!line.segments.length) continue
+    lines.push([
+      line.timeMs,
+      line.segments.map(segment => [segment.startMs, segment.durationMs, segment.text] as [number, number, string]),
+      line.text,
+    ])
+  }
+  return lines
+}
+
 /**
  * 描出当前已唱到第几段。
  *
@@ -169,6 +194,29 @@ export function playedCount(segments: readonly AwlrcSegment[], elapsedMs: number
     else break
   }
   return count
+}
+
+/**
+ * 这一行该怎么上色。
+ *
+ * - `active`：当前正在唱的行 —— 逐字扫光；
+ * - `sung`：**已经唱过**的逐字行 —— 整行保持已唱色；
+ * - `idle`：还没唱到的行（以及没有逐字信息的行）—— 普通未激活色。
+ *
+ * `sung` 这条是照桌面版来的：lx-music-desktop 的 `lyric-font-player` 在换行时
+ * 对被越过的行调 `font.finish()`，并把 `.played` 加到行上，CSS 是
+ * `&.font-mode.played .font-lrc { color: @played-color }` —— 也就是说**唱过的行
+ * 不会退回未唱色**，扫光只是「填满了」。真机上少了这条，用户会看到已唱的歌词
+ * 一过当前行就整行变灰、扫光像被擦掉了。
+ */
+export const lineStyleKind = (
+  lineNum: number,
+  activeLine: number,
+  isWordLine: boolean,
+): 'active' | 'sung' | 'idle' => {
+  if (activeLine < 0) return 'idle'
+  if (lineNum === activeLine) return 'active'
+  return isWordLine && lineNum < activeLine ? 'sung' : 'idle'
 }
 
 /**

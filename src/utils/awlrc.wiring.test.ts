@@ -69,14 +69,16 @@ test('两个方向的播放页都按段渲染，并交给 WordLyricLine', () => 
   ]) {
     const source = read(file)
     assert.match(source, /findAwlrcLine\(awlrc, lineNum, line\.time, line\.text\)/, `${file} 没有按行取逐字段（或丢了正文校验）`)
-    assert.match(source, /<WordLyricLine/, `${file} 没有把当前行交给逐字歌词渲染组件`)
+    assert.match(source, /kind === 'active' && awlrcLine\?\.segments\.length/, `${file} 没有把当前行交给逐字歌词渲染组件`)
     assert.match(source, /unplayColor=\{theme\['c-250'\]\}/, `${file} 的未唱色不再是 --color-250`)
+    // 唱过的行要保持已唱色（桌面版的 `.played`）：少了这条，扫光过行后会整行变灰
+    assert.match(source, /lineStyleKind\(lineNum, activeLine, !!awlrcLine\?\.segments\.length\)/, `${file} 不再区分「当前行 / 唱过的行 / 未唱的行」`)
+    assert.match(source, /if \(kind === 'sung'\) return \[theme\['c-primary'\]/, `${file} 唱过的行没有保持已唱色`)
   }
 
+  // 底栏只是一行普通文字：那里不做逐字（它常驻所有页面，重绘成本不划算）
   const bar = read('../components/player/PlayerBar/components/Status.tsx')
-  assert.match(bar, /useWordLyricProgress\(/, '底栏没有接入逐字进度')
-  assert.match(bar, /findAwlrcLine\(awlrc, line, undefined, text\)/, '底栏没有按行取逐字段（或丢了正文校验）')
-  assert.match(bar, /index < played \? theme\['c-primary'\]/, '底栏没有逐段上色')
+  assert.ok(!/useWordLyricProgress|awlrc/.test(bar), '底栏又接上逐字了')
 })
 
 test('逐字渲染组件：一层未唱、一层已唱，用会长的裁剪盒扫出来', () => {

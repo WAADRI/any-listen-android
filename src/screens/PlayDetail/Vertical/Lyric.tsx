@@ -10,7 +10,7 @@ import { AnimatedColorText } from '@/components/common/Text'
 import { setSpText } from '@/utils/pixelRatio'
 import playerState from '@/store/player/state'
 import { scrollTo } from '@/utils/scroll'
-import { findAwlrcLine, type Awlrc } from '@/utils/awlrc'
+import { findAwlrcLine, lineStyleKind, type Awlrc } from '@/utils/awlrc'
 import WordLyricLine from '../components/WordLyricLine'
 import PlayLine, { type PlayLineType } from '../components/PlayLine'
 // import { screenkeepAwake } from '@/utils/nativeModules/utils'
@@ -74,21 +74,18 @@ const LrcLine = memo(({ line, lineNum, activeLine, awlrc, onLayout }: LineProps)
   const lineHeight = setSpText(size) * 1.3
 
   const isActive = activeLine == lineNum
-  // 只有当前行需要逐字信息；段的时间是相对本行的，取不到就退回逐行显示
-  const awlrcLine = isActive ? findAwlrcLine(awlrc, lineNum, line.time, line.text) : undefined
+  // 取逐字段：当前行要扫光；唱过的行也要知道「它是不是逐字行」——是就保持已唱色
+  const awlrcLine = (isActive || lineNum < activeLine)
+    ? findAwlrcLine(awlrc, lineNum, line.time, line.text)
+    : undefined
+  const kind = lineStyleKind(lineNum, activeLine, !!awlrcLine?.segments.length)
 
   const colors = useMemo(() => {
-    const active = activeLine == lineNum
-    return active ? [
-      theme['c-primary'],
-      theme['c-primary-alpha-200'],
-      1,
-    ] as const : [
-      theme['c-350'],
-      theme['c-300'],
-      0.6,
-    ] as const
-  }, [activeLine, lineNum, theme])
+    // 唱过的行保持已唱色（桌面版的 `.played` 就是这个语义），只是比当前行暗一档
+    if (kind === 'active') return [theme['c-primary'], theme['c-primary-alpha-200'], 1] as const
+    if (kind === 'sung') return [theme['c-primary'], theme['c-primary-alpha-200'], 0.6] as const
+    return [theme['c-350'], theme['c-300'], 0.6] as const
+  }, [kind, theme])
 
   const handleLayout = ({ nativeEvent }: LayoutChangeEvent) => {
     onLayout(lineNum, nativeEvent.layout.height, nativeEvent.layout.width)
@@ -100,16 +97,16 @@ const LrcLine = memo(({ line, lineNum, activeLine, awlrc, onLayout }: LineProps)
   return (
     <View style={styles.line} onLayout={handleLayout}>
       {
-        // 逐字歌词：当前行交给 WordLyricLine（两层扫光，见该文件）。
+        // 逐字歌词：当前行交给 WordLyricLine（两层扫光，见该文件），唱过的行整行已唱色。
         // 配色对应 any-listen / lx-music-desktop 播放页的
         // `@unplay-font-color: --color-250` / `@played-color: --color-primary`
-        awlrcLine?.segments.length
+        kind === 'active' && awlrcLine?.segments.length
           ? <WordLyricLine
             line={awlrcLine}
             size={size}
             lineHeight={lineHeight}
             textAlign={textAlign}
-            playedColor={colors[0]}
+            playedColor={theme['c-primary']}
             unplayColor={theme['c-250']}
           />
           : <AnimatedColorText style={{

@@ -34,6 +34,8 @@ public class Lyric extends LyricPlayer {
   String lyricText = "";
   String translationText = "";
   String romaLyricText = "";
+  /** 逐字歌词（服务端 awlyric，JS 侧解析后传进来），用于桌面歌词的逐字扫光 */
+  List<WordLyric.Line> wordLines = new ArrayList<>();
 
   Lyric(ReactApplicationContext reactContext, boolean isShowTranslation, boolean isShowRoma, float playbackRate) {
     this.reactAppContext = reactContext;
@@ -83,7 +85,7 @@ public class Lyric extends LyricPlayer {
   //           if (!connectedDevices.isEmpty()) {
   //             System.out.println("已连接的 A2DP 媒体设备：");
   //             for (BluetoothDevice device : connectedDevices) {
-  //               System.out.println("设备名称: " + "地址: " + device.getAddress());
+  //               System.out.println("设备名: " + "地址: " + device.getAddress());
   //             }
   //           } else {
   //             System.out.println("没有连接的 A2DP 媒体设备");
@@ -95,11 +97,11 @@ public class Lyric extends LyricPlayer {
   //       @Override
   //       public void onServiceDisconnected(int profile) {
   //         // 服务断开时的处理
-  //         System.out.println("蓝牙服务断开时的处理");
+  //         System.out.println("服务已断开");
   //       }
   //     }, BluetoothProfile.A2DP);
   //   } else {
-  //     System.out.println("蓝牙未开启或设备不支持蓝牙");
+  //     System.out.println("蓝牙未开启");
   //   }
   // }
 
@@ -115,7 +117,10 @@ public class Lyric extends LyricPlayer {
   private void handleScreenOn() {
     isScreenOff = false;
     if (isDisableAutoPause()) return;
-    if (lyricView == null) lyricView = new LyricView(reactAppContext, lyricEvent);
+    if (lyricView == null) {
+      lyricView = new LyricView(reactAppContext, lyricEvent);
+      lyricView.setPlayer(this);
+    }
     lyricView.runOnUiThread(() -> {
       handleGetCurrentLyric(lastLine);
       setTempPause(false);
@@ -128,9 +133,10 @@ public class Lyric extends LyricPlayer {
     this.pause();
   }
 
-  private void setCurrentLyric(String lyric, ArrayList<String> extendedLyrics) {
+  private void setCurrentLyric(String lyric, ArrayList<String> extendedLyrics, WordLyric.Line wordLine) {
     if (isShowLyricView && !isScreenOff && lyricView != null) {
-      lyricView.setLyric(lyric, extendedLyrics);
+      if (wordLine == null) lyricView.setLyric(lyric, extendedLyrics, null, 0);
+      else lyricView.setLyric(lyric, extendedLyrics, wordLine.segments, wordLine.time);
     }
     if (isSendLyricTextEvent) {
       WritableMap params = Arguments.createMap();
@@ -144,11 +150,16 @@ public class Lyric extends LyricPlayer {
     if (lineNum >= 0 && lineNum < lines.size()) {
       HashMap line = (HashMap) lines.get(lineNum);
       if (line != null) {
-        setCurrentLyric((String) line.get("text"), (ArrayList<String>) line.get("extendedLyrics"));
+        String text = (String) line.get("text");
+        Object time = line.get("time");
+        // 逐字歌词由 JS 侧解析，这边的行序/去重规则与它不完全一致，
+        // 所以按行时间匹配、行号兜底，并要求正文一致（见 WordLyric.findLine）
+        WordLyric.Line wordLine = WordLyric.findLine(wordLines, lineNum, time == null ? -1 : (int) time, text);
+        setCurrentLyric(text, (ArrayList<String>) line.get("extendedLyrics"), wordLine);
         return;
       }
     }
-    setCurrentLyric("", new ArrayList<>(0));
+    setCurrentLyric("", new ArrayList<>(0), null);
   }
 
   public void setSendLyricTextEvent(boolean isSend) {
@@ -166,7 +177,10 @@ public class Lyric extends LyricPlayer {
     if (isShowLyricView) return;
     if (lyricEvent == null) lyricEvent = new LyricEvent(reactAppContext);
     isShowLyricView = true;
-    if (lyricView == null) lyricView = new LyricView(reactAppContext, lyricEvent);
+    if (lyricView == null) {
+      lyricView = new LyricView(reactAppContext, lyricEvent);
+      lyricView.setPlayer(this);
+    }
     try {
       lyricView.showLyricView(options);
     } catch (Exception e) {
@@ -196,11 +210,28 @@ public class Lyric extends LyricPlayer {
     super.setLyric(lyricText, extendedLyrics);
   }
 
-  public void setLyric(String lyric, String translation, String romaLyric) {
+  public void setLyric(String lyric, String translation, String romaLyric, List<WordLyric.Line> wordLines) {
     lyricText = lyric;
     translationText = translation;
     romaLyricText = romaLyric;
+    this.wordLines = wordLines == null ? new ArrayList<>() : wordLines;
     refreshLyric();
+  }
+
+  /**
+   * 播放/暂停时让桌面歌词的扫光立刻跟上：暂停时它冻在当前进度，
+   * 恢复播放后如果没人重画，就会一直停在那里直到下一行。
+   */
+  @Override
+  public void play(int curTime) {
+    super.play(curTime);
+    if (lyricView != null) lyricView.invalidateWordSweep();
+  }
+
+  @Override
+  public void pause() {
+    super.pause();
+    if (lyricView != null) lyricView.invalidateWordSweep();
   }
 
   @Override
