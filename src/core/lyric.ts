@@ -31,9 +31,11 @@ export const init = async() => {
  * set lyric
  * @param lyric lyric str
  * @param translation lyric translation
+ * @param romalrc lyric roma
+ * @param awlrc word-by-word lyric (any-listen 的 awlyric)
  */
-const handleSetLyric = async(lyric: string, translation = '', romalrc = '') => {
-  lrcSetLyric(lyric, translation, romalrc)
+const handleSetLyric = async(lyric: string, translation = '', romalrc = '', awlrc = '') => {
+  lrcSetLyric(lyric, translation, romalrc, awlrc)
   await setDesktopLyric(lyric, translation, romalrc)
   if (settingState.setting['player.isShowBluetoothFullLyric']) {
     void updateNowPlayingTitles({
@@ -116,7 +118,8 @@ export const setLyric = async() => {
     let rlrc = ''
     if (playerState.musicInfo.tlrc) tlrc = playerState.musicInfo.tlrc
     if (playerState.musicInfo.rlrc) rlrc = playerState.musicInfo.rlrc
-    await handleSetLyric(playerState.musicInfo.lrc, tlrc, rlrc)
+    // lxlrc 就是服务端的逐字歌词（any-listen 的 awlyric），由适配层映射过来
+    await handleSetLyric(playerState.musicInfo.lrc, tlrc, rlrc, playerState.musicInfo.lxlrc ?? '')
   }
 
   if (playerState.isPlay) play()
