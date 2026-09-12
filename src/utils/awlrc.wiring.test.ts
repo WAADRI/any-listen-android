@@ -71,9 +71,9 @@ test('两个方向的播放页都按段渲染，并交给 WordLyricLine', () => 
     assert.match(source, /findAwlrcLine\(awlrc, lineNum, line\.time, line\.text\)/, `${file} 没有按行取逐字段（或丢了正文校验）`)
     assert.match(source, /kind === 'active' && awlrcLine\?\.segments\.length/, `${file} 没有把当前行交给逐字歌词渲染组件`)
     assert.match(source, /unplayColor=\{theme\['c-250'\]\}/, `${file} 的未唱色不再是 --color-250`)
-    // 唱过的行要保持已唱色（桌面版的 `.played`）：少了这条，扫光过行后会整行变灰
+    // 唱过的行与当前行同一套颜色（桌面版的 `.played`）：少了这条，扫光过行后会整行变灰
     assert.match(source, /lineStyleKind\(lineNum, activeLine, !!awlrcLine\?\.segments\.length\)/, `${file} 不再区分「当前行 / 唱过的行 / 未唱的行」`)
-    assert.match(source, /if \(kind === 'sung'\) return \[theme\['c-primary'\]/, `${file} 唱过的行没有保持已唱色`)
+    assert.match(source, /if \(kind !== 'idle'\) return \[theme\['c-primary'\], theme\['c-primary-alpha-200'\], 1\]/, `${file} 唱过的行与当前行不再是同一套颜色`)
   }
 
   // 底栏只是一行普通文字：那里不做逐字（它常驻所有页面，重绘成本不划算）
