@@ -221,8 +221,16 @@ public class Lyric extends LyricPlayer {
 
   public void pauseLyric() {
     pause();
-    if (!isRunPlayer) return;
-    handleGetCurrentLyric(-1);
+    // 暂停时**不要**把当前行清掉。
+    //
+    // 上游这里写的是 `handleGetCurrentLyric(-1)`，而 -1 会落到
+    // `setCurrentLyric("")` —— 桌面歌词窗口在暂停瞬间整块变成空的（用户可见的
+    // 缺陷：暂停后歌词消失，恢复播放才回来）。而且 `lastLine` 被置成 -1 之后，
+    // 息屏再亮屏时 `handleScreenOn` 恢复的也是空行。
+    //
+    // 现在只暂停解析器：窗口保持显示当前行，`lastLine` 也保持在那一行，
+    // 恢复播放后 `onPlay` 会继续给出正确的行。换歌时 `onSetLyric` 仍会清空，
+    // 停止播放时 JS 侧会 `setLyric('')`，两条清空路径都不受影响。
   }
 
   public void lockLyric() {
