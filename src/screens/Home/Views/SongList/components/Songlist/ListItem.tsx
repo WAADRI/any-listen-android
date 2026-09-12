@@ -7,6 +7,7 @@ import { scaleSizeW } from '@/utils/pixelRatio'
 import { NAV_SHEAR_NATIVE_IDS } from '@/config/constant'
 import { useTheme } from '@/store/theme/hook'
 import Image from '@/components/common/Image'
+import { Icon } from '@/components/common/Icon'
 
 const gap = scaleSizeW(15)
 export default memo(({ item, index, width, showSource, onPress }: {
@@ -27,7 +28,20 @@ export default memo(({ item, index, width, showSource, onPress }: {
           <View style={{ ...styles.listItem, width: itemWidth }}>
             <View style={{ ...styles.listItemImg, backgroundColor: theme['c-content-background'] }}>
               <TouchableOpacity activeOpacity={0.5} onPress={handlePress}>
-                <Image url={item.img} nativeID={`${NAV_SHEAR_NATIVE_IDS.songlistDetail_pic}_from_${item.id}`} style={{ width: itemWidth, height: itemWidth, borderRadius: 4 }} />
+                {/* any-listen 的歌单**没有封面字段**（实测 meta 的键里
+                    没有 picUrl/img/cover），所以这里必然是空占位。
+                    给一个有意义的占位而不是一个空方块：空白会让人以为
+                    「加载失败」，而其实服务端根本不提供这个字段。 */}
+                {item.img
+                  ? <Image url={item.img} nativeID={`${NAV_SHEAR_NATIVE_IDS.songlistDetail_pic}_from_${item.id}`} style={{ width: itemWidth, height: itemWidth, borderRadius: 4 }} />
+                  : (
+                      <View
+                        nativeID={`${NAV_SHEAR_NATIVE_IDS.songlistDetail_pic}_from_${item.id}`}
+                        style={{ ...styles.placeholder, width: itemWidth, height: itemWidth }}
+                      >
+                        <Icon name="album" color={theme['c-font-label']} size={Math.max(18, itemWidth / 3)} />
+                      </View>
+                    )}
                 { showSource ? <Text style={styles.sourceLabel} size={9} color="#fff" >{item.source}</Text> : null }
               </TouchableOpacity>
             </View>
@@ -65,6 +79,12 @@ const styles = createStyle({
         elevation: 2,
       },
     }),
+  },
+  /** 无封面时的占位：居中一个唱片图标，让「没有封面」看起来是有意的。 */
+  placeholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 4,
   },
   sourceLabel: {
     paddingLeft: 4,

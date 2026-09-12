@@ -277,12 +277,32 @@ test('每次重连都会重发 inited（漏发会表现为永远收不到推送�
   session.close()
 })
 
-test('心跳：收到纯文本 ping 要回 pong', async () => {
+/**
+ * 心跳：服务端的纯文本 `ping` 必须被**忽略**，绝不能回文本 `pong`。
+ *
+ * 这一条是**反转**过来的：早先这里断言「要回 pong」，而那个行为是错的，
+ * 也是「每 30 秒重连一次」的原因。
+ *
+ * 实测（tools/ws-probe-heartbeat.mjs，对着真实服务器）：
+ *   什么都不回 → 存活 120s+
+ *   回文本 pong → 约 0.2 秒后被服务端以 code=4100 关闭
+ *
+ * 因为服务端对**任何**字符串都先 `JSON.parse`，失败即 `close(failed)`；
+ * `'pong'` 不是合法 JSON。保活实际靠 WebSocket 协议级 ping/pong 帧，
+ * 由原生实现自动应答，应用层什么都不用做。
+ */
+test('心跳：收到纯文本 ping 必须忽略，不能回 pong', async () => {
   const { session } = makeSession()
   const socket = await establish(session)
+  const before = socket.sent.length
   socket.emit('ping')
-  await sleep(5)
-  assert.ok(socket.sent.includes('pong'), `没有回 pong，实际发送: ${JSON.stringify(socket.sent)}`)
+  await sleep(20)
+  assert.ok(
+    !socket.sent.includes('pong'),
+    `回了文本 pong —— 服务端会把它当成非法 JSON 并以 4100 关闭连接。实际发送: ${JSON.stringify(socket.sent.slice(before))}`,
+  )
+  // 也不该因此多发任何别的帧
+  assert.equal(socket.sent.length, before, '处理 ping 时发送了额外帧')
   session.close()
 })
 

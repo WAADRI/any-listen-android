@@ -116,16 +116,31 @@ export function decodeFrame(raw: unknown): DecodedResponse {
 }
 
 /**
- * 心跳专用：服务端发的纯文本 ping。
+ * 心跳：服务端发的纯文本 `ping`。
  *
- * 服务端每 30s 检查，超过 45s 无活动就 `terminate()`，超过 15s 发 WebSocket ping，
- * 并**另外**发一条纯文本 `"ping"`。客户端必须回 `"pong"`。
- * 漏掉的后果是连接被服务端静默掐断（不报错，表现为随机时刻开始所有请求超时）。
+ * ## ⚠️ 绝对不要用文本 `pong` 回复
+ *
+ * 这一点与直觉相反，是**实测**出来的（`tools/ws-probe-heartbeat.mjs`）：
+ *
+ * | 客户端行为 | 结果 |
+ * |---|---|
+ * | 什么都不回 | 存活 120s+，服务端每 30s 发一次 `ping` |
+ * | 回文本 `pong` | **约 0.2 秒后被服务端关闭，code=4100** |
+ *
+ * 原因是服务端 `websocket.ts` 对**任何**字符串消息都先刷新 `aliveTime`、
+ * 再 `JSON.parse`；解析失败就 `socket.close(IPC_CLOSE_CODE.failed)`。
+ * `'pong'` 不是合法 JSON，于是回一句就断一次连接。
+ *
+ * 真正保活的是 **WebSocket 协议级 ping 帧**：服务端每次检查会调
+ * `socket.ping()`，而协议层的 pong 由 WebSocket 实现**自动**应答，
+ * 它才是刷新服务端 `aliveTime` 的那条（`websocket.ts` 的 `on('pong')`）。
+ * 因此应用层什么都不用做 —— 收到文本 `ping` 时**直接忽略**。
+ *
+ * 早期版本在这里回 `'pong'`，后果就是每 30 秒被断开重连一次。
  */
 export const PING_TEXT = 'ping'
-export const PONG_TEXT = 'pong'
 
-/** 判断一个入站原始值是否是心跳 ping。 */
+/** 判断一个入站原始值是否是心跳 ping（用于**忽略**它，而不是回复）。 */
 export function isPing(raw: unknown): boolean {
   return raw === PING_TEXT
 }

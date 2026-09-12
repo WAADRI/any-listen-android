@@ -15,7 +15,6 @@ import {
   encodeCallbackResponse,
   decodeFrame,
   isPing,
-  PONG_TEXT,
 } from './wire'
 
 /** 握手 HTTP 路径前缀。 */
@@ -266,11 +265,11 @@ export class AnyListenSession {
       this.lastInboundAt = Date.now()
       const raw = ev.data
       if (isPing(raw)) {
-        try {
-          socket.send(PONG_TEXT)
-        } catch {
-          /* 连接可能刚好关闭，忽略 */
-        }
+        // **故意什么都不做**。服务端的文本 `ping` 只需要被忽略：
+        // 保活靠协议级 ping/pong（WebSocket 实现自动应答），
+        // 而回一句文本 `pong` 会因为不是合法 JSON 被服务端判为协议错误、
+        // 以 code 4100 关闭连接 —— 实测 0.2 秒内断开。
+        // 详见 wire.ts 的 isPing 注释与 tools/ws-probe-heartbeat.mjs。
         return
       }
       this.handleFrame(raw)
