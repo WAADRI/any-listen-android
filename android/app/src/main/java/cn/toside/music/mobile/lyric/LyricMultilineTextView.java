@@ -3,11 +3,8 @@ package cn.toside.music.mobile.lyric;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.Canvas;
-import android.os.Build;
 import android.text.Layout;
-import android.text.StaticLayout;
 import android.text.TextPaint;
-import android.text.TextUtils;
 import android.view.Gravity;
 import android.widget.TextView;
 
@@ -22,15 +19,16 @@ import java.util.List;
  * 一次画完，外部**没法只画「已唱到的那一部分」**（RN 那边可以用一个会长的裁剪盒，
  * Android 这边必须自己拿 `Layout` 画）。
  *
- * 这里的做法与 RN / 桌面版一致：把同一段文字画两遍——先整段用**未唱色**画，
- * 再用**已唱色**画，但只画到「已唱位置」为止（用 `clipRect` 裁）。因为两遍文字来自
- * 同一个 `Layout`，位置完全一致，边界是硬切，就是逐字扫过的效果。
+ * 做法与 RN / 桌面版一致：把同一段文字画两遍——先整段用**未唱色**画，再用**已唱色**
+ * 画，但只画到「已唱位置」为止（用 `clipRect` 裁）。两遍文字来自**同一个 `Layout`**，
+ * 位置完全一致，边界是硬切，就是逐字扫过的效果。
  *
  * ## 位置怎么算
  *
- * 逐字数据只描述「唱到第几个字」（{@link WordLyric#charPositionAt}，返回带小数的
- * 字符位置），像素坐标交给 `Layout` 自己算 —— 这样**折行的行也能正确扫**
- * （第 1 行扫完接着扫第 2 行），不用自己累加每段宽度。
+ * 排版直接用框架排好的 {@link TextView#getLayout()}：它已经按字号/宽度/maxLines/
+ * ellipsize 排好版，`getPrimaryHorizontal` 拿到的就是屏幕上的真实坐标，所以**折行的行
+ * 也能正确扫**（第 1 行扫完接着扫第 2 行），不用自己累加每段宽度，也不用自己建
+ * `StaticLayout`（那几个带 `TruncateAt` 的旧构造器在 compileSdk 36 上已经不可用了）。
  */
 @SuppressLint("AppCompatCustomView")
 public class LyricMultilineTextView extends TextView implements WordLyricView {
@@ -42,13 +40,6 @@ public class LyricMultilineTextView extends TextView implements WordLyricView {
   private List<WordLyric.Segment> wordSegments = null;
   private int wordLineTime = 0;
   private LyricPlayer player = null;
-
-  private StaticLayout layout = null;
-  private String layoutCacheText = null;
-  private int layoutCacheWidth = -1;
-  private int layoutCacheMaxLines = -1;
-  private float layoutCacheTextSize = -1f;
-  private Layout.Alignment layoutCacheAlignment = null;
 
   private final Runnable invalidateRunnable = this::invalidate;
 
@@ -96,53 +87,6 @@ public class LyricMultilineTextView extends TextView implements WordLyricView {
     postInvalidate();
   }
 
-  private Layout.Alignment getLayoutAlignment() {
-    int horizontal = getGravity() & Gravity.RELATIVE_HORIZONTAL_GRAVITY_MASK;
-    if (horizontal == Gravity.CENTER_HORIZONTAL) return Layout.Alignment.ALIGN_CENTER;
-    if (horizontal == Gravity.RIGHT) return Layout.Alignment.ALIGN_OPPOSITE;
-    return Layout.Alignment.ALIGN_NORMAL;
-  }
-
-  /** 按当前文字/宽度/字号/对齐重建排版，同样的参数只建一次 */
-  private StaticLayout getStaticLayout() {
-    CharSequence text = getText();
-    int width = getWidth() - getPaddingLeft() - getPaddingRight();
-    if (width <= 0 || text == null || text.length() == 0) return null;
-    int maxLines = getMaxLines();
-    float textSize = getTextSize();
-    Layout.Alignment alignment = getLayoutAlignment();
-
-    String plain = text.toString();
-    if (layout != null && layoutCacheWidth == width && layoutCacheMaxLines == maxLines
-      && layoutCacheTextSize == textSize && layoutCacheAlignment == alignment
-      && plain.equals(layoutCacheText)) {
-      return layout;
-    }
-
-    TextPaint paint = getPaint();
-    TextUtils.TruncateAt ellipsize = getEllipsize();
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-      layout = StaticLayout.Builder.obtain(text, 0, text.length(), paint, width)
-        .setAlignment(alignment)
-        .setLineSpacing(0f, 1f)
-        .setIncludePad(true)
-        .setEllipsize(maxLines > 0 ? ellipsize : null)
-        .setEllipsizedWidth(width)
-        .setMaxLines(maxLines > 0 ? maxLines : Integer.MAX_VALUE)
-        .build();
-    } else {
-      // API 21/22 没有 Builder，退化成 8 参数版本（不带行数上限与省略宽度，这两个版本已极少见）
-      layout = new StaticLayout(text, paint, width, alignment, 1f, 0f, true, ellipsize);
-    }
-
-    layoutCacheText = plain;
-    layoutCacheWidth = width;
-    layoutCacheMaxLines = maxLines;
-    layoutCacheTextSize = textSize;
-    layoutCacheAlignment = alignment;
-    return layout;
-  }
-
   private float getDrawY(int layoutHeight) {
     int contentHeight = getHeight() - getPaddingTop() - getPaddingBottom();
     int vertical = getGravity() & Gravity.VERTICAL_GRAVITY_MASK;
@@ -165,7 +109,7 @@ public class LyricMultilineTextView extends TextView implements WordLyricView {
     return WordLyric.charPositionAt(wordSegments, player.getCurrentTimeMs() - wordLineTime);
   }
 
-  private void drawSwept(Canvas canvas, StaticLayout layout, float charPosition) {
+  private void drawSwept(Canvas canvas, Layout layout, float charPosition) {
     CharSequence text = getText();
     if (text == null) return;
     int length = text.length();
@@ -179,9 +123,7 @@ public class LyricMultilineTextView extends TextView implements WordLyricView {
     int safeOffset = Math.min(offset, length);
     int row = layout.getLineForOffset(safeOffset);
     float startX = layout.getPrimaryHorizontal(safeOffset);
-    float endX;
-    if (offset + 1 <= length) endX = layout.getPrimaryHorizontal(offset + 1);
-    else endX = layout.getLineRight(row);
+    float endX = offset + 1 <= length ? layout.getPrimaryHorizontal(offset + 1) : layout.getLineRight(row);
     float sweepX = startX + (endX - startX) * fraction;
 
     // ① 已唱完的整行
@@ -214,7 +156,8 @@ public class LyricMultilineTextView extends TextView implements WordLyricView {
 
   @Override
   protected void onDraw(Canvas canvas) {
-    StaticLayout layout = getStaticLayout();
+    // 用框架排好的 Layout：它是唯一与「框架本来会画出来的文字」完全一致的排版
+    Layout layout = getLayout();
     if (layout == null) return;
 
     TextPaint paint = getPaint();
@@ -232,7 +175,7 @@ public class LyricMultilineTextView extends TextView implements WordLyricView {
     } else {
       paint.setColor(playedColor);
       drawSwept(canvas, layout, swept);
-      // 还有得唱才继续刷；唱完/暂停后自然停下，不空转
+      // 还有得唱才继续刷；唱完或暂停后自然停下，不空转
       if (swept < getLyricLength()) scheduleWordInvalidate();
     }
 
