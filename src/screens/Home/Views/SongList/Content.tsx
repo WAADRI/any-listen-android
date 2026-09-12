@@ -63,7 +63,7 @@ export default () => {
       if (cancelled) return
       const resolved = resolveSonglistInfo(info)
       songlistInfo.current = resolved
-      headerBarRef.current?.setSource(resolved.source, resolved.sortId, info.tagName, resolved.tagId)
+      headerBarRef.current?.setSource(resolved.source, resolved.sortId)
       await listRef.current?.loadList(resolved.source, resolved.sortId, resolved.tagId)
       if (cancelled) return
 
@@ -90,18 +90,12 @@ export default () => {
     listRef.current?.loadList(songlistInfo.current.source, id, songlistInfo.current.tagId)
   }
 
-  const handleTagChange: HeaderBarProps['onTagChange'] = (name, id) => {
-    songlistInfo.current.tagId = id
-    void saveSongListSetting({ tagName: name, tagId: id })
-    listRef.current?.loadList(songlistInfo.current.source, songlistInfo.current.sortId, id)
-  }
-
   const handleSourceChange: HeaderBarProps['onSourceChange'] = (source) => {
     songlistInfo.current.source = source
     songlistInfo.current.tagId = ''
     songlistInfo.current.sortId = songlistState.sortList[source]![0].id
     void saveSongListSetting({ sortId: songlistInfo.current.sortId, source, tagId: '', tagName: '' })
-    headerBarRef.current?.setSource(source, songlistInfo.current.sortId, '', songlistInfo.current.tagId)
+    headerBarRef.current?.setSource(source, songlistInfo.current.sortId)
     listRef.current?.loadList(source, songlistInfo.current.sortId, songlistInfo.current.tagId)
   }
 
@@ -110,7 +104,6 @@ export default () => {
       <HeaderBar
         ref={headerBarRef}
         onSortChange={handleSortChange}
-        onTagChange={handleTagChange}
         onSourceChange={handleSourceChange}
       />
       <List ref={listRef} />

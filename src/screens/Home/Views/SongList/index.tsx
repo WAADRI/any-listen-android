@@ -1,58 +1,11 @@
-import { useEffect, useRef } from 'react'
-import settingState from '@/store/setting/state'
 import Content from './Content'
-import TagList from './TagList'
-import { useTheme } from '@/store/theme/hook'
-import DrawerLayoutFixed, { type DrawerLayoutFixedType } from '@/components/common/DrawerLayoutFixed'
-import { COMPONENT_IDS } from '@/config/constant'
-import { scaleSizeW } from '@/utils/pixelRatio'
-import type { InitState as CommonState } from '@/store/common/state'
 
-const MAX_WIDTH = scaleSizeW(560)
-
-export default () => {
-  const drawer = useRef<DrawerLayoutFixedType>(null)
-  const theme = useTheme()
-
-  useEffect(() => {
-    const handleFixDrawer = (id: CommonState['navActiveId']) => {
-      if (id == 'nav_songlist') drawer.current?.fixWidth()
-    }
-    const handleShow = () => {
-      requestAnimationFrame(() => {
-        drawer.current?.openDrawer()
-      })
-    }
-    const handleHide = () => {
-      drawer.current?.closeDrawer()
-    }
-
-    global.state_event.on('navActiveIdUpdated', handleFixDrawer)
-    global.app_event.on('showSonglistTagList', handleShow)
-    global.app_event.on('hideSonglistTagList', handleHide)
-
-    return () => {
-      global.state_event.off('navActiveIdUpdated', handleFixDrawer)
-      global.app_event.off('showSonglistTagList', handleShow)
-      global.app_event.off('hideSonglistTagList', handleHide)
-    }
-  }, [])
-
-  const navigationView = () => <TagList />
-  // console.log('render drawer content')
-
-  return (
-    <DrawerLayoutFixed
-      ref={drawer}
-      visibleNavNames={[COMPONENT_IDS.home]}
-      widthPercentage={0.8}
-      widthPercentageMax={MAX_WIDTH}
-      drawerPosition={settingState.setting['common.drawerLayoutPosition']}
-      renderNavigationView={navigationView}
-      drawerBackgroundColor={theme['c-content-background']}
-      style={{ elevation: 1 }}
-    >
-      <Content />
-    </DrawerLayoutFixed>
-  )
-}
+/**
+ * 歌单页。
+ *
+ * 上游这里套了一个 `DrawerLayout`，抽屉里装的是「歌单分类标签」筛选
+ * （由 `HeaderBar` 的标签按钮通过 `showSonglistTagList` 事件打开）。
+ * any-listen 没有歌单分类、`getTags()` 返回空标签，那个按钮已删除，
+ * 抽屉也就没有任何内容可装 —— 所以整块去掉，直接渲染内容。
+ */
+export default () => <Content />
