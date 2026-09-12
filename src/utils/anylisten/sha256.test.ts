@@ -105,3 +105,36 @@ test('randomHex 产出正确长度且字符集合法', () => {
   // 不同调用应当给出不同盐（32 字节内碰撞概率可忽略）
   assert.notEqual(randomHex(32), randomHex(32))
 })
+
+/**
+ * 密码指纹：用于排查「密码明明对却报 401」。
+ *
+ * `handshake()` 会把 `长度 + sha256前8` 记进日志（绝不记密码本身）。
+ * 这几条把这个「已知良好」的指纹固定在测试里，并同时对照 Node 的 crypto ——
+ * 于是它不是一个来路不明的魔数，而是可复算的。
+ *
+ * 尤其重要的是「看起来一样但哈希不同」的那几个：中文输入法很容易把句点
+ * 打成全角，屏幕上完全分辨不出来。开发时正是靠这组值定位到输入内容的差异。
+ */
+test('密码指纹：Test123. 的期望值（供日志比对）', () => {
+  assert.equal(sha256Hex('Test123.'), nodeSha256Hex('Test123.'))
+  assert.equal(sha256Hex('Test123.').slice(0, 8), '1d403e90')
+})
+
+test('全角句点与半角句点哈希不同（输入法极易混淆）', () => {
+  const half = 'Test123.'
+  const halfHash = sha256Hex(half)
+  for (const full of ['Test123\uFF0E', 'Test123\u3002']) {
+    // 长度相同、外观几乎相同，但哈希必须不同 —— 服务端因此会判 401
+    assert.equal(full.length, half.length)
+    assert.notEqual(sha256Hex(full), halfHash)
+  }
+})
+
+test('尾部空白会改变哈希（长度可用于发现它）', () => {
+  const base = 'Test123.'
+  assert.notEqual(sha256Hex(base + ' '), sha256Hex(base))
+  assert.notEqual(sha256Hex(base + '\n'), sha256Hex(base))
+  assert.equal((base + ' ').length, base.length + 1)
+})
+

@@ -74,6 +74,21 @@ export async function handshake(params: HandshakeParams): Promise<HandshakeResul
   const salt = randomHex(16)
   const m = sha256Hex(params.password + salt)
 
+  /**
+   * 诊断：只记**长度与哈希前缀**，绝不记密码本身。
+   *
+   * 这个日志是为了排查「密码明明对却报 401」这类问题。那种情况下哈希算法
+   * 与 salt 都没问题，差别只在**字符串本身**：中文输入法很容易把句点打成
+   * 全角（`．` U+FF0E / `。` U+3002），屏幕上看起来完全一样，但哈希不同；
+   * 尾部多一个空格或换行也一样。
+   *
+   * 有了长度与前缀就能直接判断：长度不是 8，或者前缀不是 `1d403e90`
+   * （`Test123.` 的期望值，见 sha256.test.ts 的同一算法），
+   * 就说明输入框里的字符和以为的不一样。
+   */
+  const pwdHash = sha256Hex(params.password)
+  console.log(`[anylisten] 密码诊断：长度=${params.password.length} sha256前8=${pwdHash.slice(0, 8)}`)
+
   let resp: Response
   try {
     resp = await params.fetchImpl(`${base}${API_PREFIX}${IPC_PATH}/ah`, {
