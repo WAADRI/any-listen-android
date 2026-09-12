@@ -1,17 +1,24 @@
 import { useEffect, useState } from 'react'
 import Lyric, { type Lines } from 'lrc-file-parser'
+import { parseAwlrc, type Awlrc } from '@/utils/awlrc'
 // import { getStore, subscribe } from '@/store'
 export type Line = Lines[number]
 type PlayHook = (line: number, text: string) => void
 type SetLyricHook = (lines: Lines) => void
+type SetAwlrcHook = (awlrc: Awlrc) => void
+
+export const emptyAwlrc: Awlrc = { lines: [], byTime: new Map(), hasWordTiming: false }
 
 const lrcTools = {
   isInited: false,
   lrc: null as Lyric | null,
   currentLineData: { line: 0, text: '' },
   currentLines: [] as Lines,
+  /** 逐字歌词（服务端的 awlyric），与 currentLines 同源、独立解析 */
+  awlrc: emptyAwlrc as Awlrc,
   playHooks: [] as PlayHook[],
   setLyricHooks: [] as SetLyricHook[],
+  awlrcHooks: [] as SetAwlrcHook[],
   isPlay: false,
   isShowTranslation: false,
   isShowRoma: false,
@@ -54,6 +61,16 @@ const lrcTools = {
   removeSetLyricHook(hook: SetLyricHook) {
     this.setLyricHooks.splice(this.setLyricHooks.indexOf(hook), 1)
   },
+  notifyAwlrc() {
+    for (const hook of this.awlrcHooks) hook(this.awlrc)
+  },
+  addAwlrcHook(hook: SetAwlrcHook) {
+    this.awlrcHooks.push(hook)
+    hook(this.awlrc)
+  },
+  removeAwlrcHook(hook: SetAwlrcHook) {
+    this.awlrcHooks.splice(this.awlrcHooks.indexOf(hook), 1)
+  },
   setLyric() {
     const extendedLyrics = [] as string[]
     if (this.isShowTranslation && this.translationText) extendedLyrics.push(this.translationText)
@@ -67,11 +84,14 @@ export const init = async() => {
   lrcTools.init()
 }
 
-export const setLyric = (lyric: string, translation?: string, romalrc?: string) => {
+export const setLyric = (lyric: string, translation?: string, romalrc?: string, awlrc?: string) => {
   lrcTools.isPlay = false
   lrcTools.lyricText = lyric
   lrcTools.translationText = translation
   lrcTools.romaText = romalrc
+  // 逐字歌词与普通歌词同源，一起换掉；没有逐字信息时解析结果为空，界面自然退回逐行
+  lrcTools.awlrc = parseAwlrc(awlrc)
+  lrcTools.notifyAwlrc()
   lrcTools.setLyric()
 }
 export const setPlaybackRate = (playbackRate: number) => {
@@ -133,5 +153,19 @@ export const useLrcSet = () => {
   }, [])
 
   return lines
+}
+
+// on word-by-word lyric set hook
+export const useAwlrc = () => {
+  const [awlrc, setAwlrc] = useState<Awlrc>(lrcTools.awlrc)
+  useEffect(() => {
+    const callback = (awlrc: Awlrc) => {
+      setAwlrc(awlrc)
+    }
+    lrcTools.addAwlrcHook(callback)
+    return () => { lrcTools.removeAwlrcHook(callback) }
+  }, [])
+
+  return awlrc
 }
 

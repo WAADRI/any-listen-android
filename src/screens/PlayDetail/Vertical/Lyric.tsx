@@ -1,15 +1,17 @@
 import { memo, useMemo, useEffect, useRef, useCallback } from 'react'
 import { View, FlatList, type FlatListProps, type LayoutChangeEvent, type NativeSyntheticEvent, type NativeScrollEvent } from 'react-native'
 // import { useLayout } from '@/utils/hooks'
-import { type Line, useLrcPlay, useLrcSet } from '@/plugins/lyric'
+import { type Line, useAwlrc, useLrcPlay, useLrcSet } from '@/plugins/lyric'
 import { createStyle } from '@/utils/tools'
 // import { useComponentIds } from '@/store/common/hook'
 import { useTheme } from '@/store/theme/hook'
 import { useSettingValue } from '@/store/setting/hook'
-import { AnimatedColorText } from '@/components/common/Text'
+import Text, { AnimatedColorText } from '@/components/common/Text'
 import { setSpText } from '@/utils/pixelRatio'
 import playerState from '@/store/player/state'
 import { scrollTo } from '@/utils/scroll'
+import { findAwlrcLine, type Awlrc } from '@/utils/awlrc'
+import { useWordLyricProgress } from '@/utils/hooks/useWordLyricProgress'
 import PlayLine, { type PlayLineType } from '../components/PlayLine'
 // import { screenkeepAwake } from '@/utils/nativeModules/utils'
 // import { log } from '@/utils/log'
@@ -60,14 +62,22 @@ interface LineProps {
   line: Line
   lineNum: number
   activeLine: number
+  /** 整首的逐字歌词；没有逐字信息时为空结构 */
+  awlrc: Awlrc
   onLayout: (lineNum: number, height: number, width: number) => void
 }
-const LrcLine = memo(({ line, lineNum, activeLine, onLayout }: LineProps) => {
+const LrcLine = memo(({ line, lineNum, activeLine, awlrc, onLayout }: LineProps) => {
   const theme = useTheme()
   const lrcFontSize = useSettingValue('playDetail.vertical.style.lrcFontSize')
   const textAlign = useSettingValue('playDetail.style.align')
   const size = lrcFontSize / 10
   const lineHeight = setSpText(size) * 1.3
+
+  const isActive = activeLine == lineNum
+  // 只有当前行需要逐字信息；段的时间是相对本行的，取不到就退回逐行显示
+  const awlrcLine = isActive ? findAwlrcLine(awlrc, lineNum, line.time, line.text) : undefined
+  const played = useWordLyricProgress(awlrcLine)
+  const segments = awlrcLine?.segments.length ? awlrcLine.segments : null
 
   const colors = useMemo(() => {
     const active = activeLine == lineNum
@@ -95,7 +105,16 @@ const LrcLine = memo(({ line, lineNum, activeLine, onLayout }: LineProps) => {
         ...styles.lineText,
         textAlign,
         lineHeight,
-      }} textBreakStrategy="simple" color={colors[0]} opacity={colors[2]} size={size}>{line.text}</AnimatedColorText>
+      }} textBreakStrategy="simple" color={colors[0]} opacity={colors[2]} size={size}>{
+          // 逐字歌词：一个字/词一段，唱到的段用已唱色。配色对应 any-listen 播放页的
+          // `@unplay-font-color: --color-250` / `@played-color: --color-primary`：
+          // 没唱到的是灰字，唱到的转主题色，整行唱完就与普通当前行完全一致
+          segments
+            ? segments.map((segment, index) => (
+              <Text key={index} size={size} color={index < played ? colors[0] : theme['c-250']}>{segment.text}</Text>
+            ))
+            : line.text
+        }</AnimatedColorText>
       {
         line.extendedLyrics.map((lrc, index) => {
           return (<AnimatedColorText style={{
@@ -108,14 +127,17 @@ const LrcLine = memo(({ line, lineNum, activeLine, onLayout }: LineProps) => {
     </View>
   )
 }, (prevProps, nextProps) => {
-  return prevProps.line === nextProps.line &&
-    prevProps.activeLine != nextProps.lineNum &&
-    nextProps.activeLine != nextProps.lineNum
+  if (prevProps.line !== nextProps.line || prevProps.awlrc !== nextProps.awlrc) return false
+  // 焦点变化必须重渲染，否则会留着另一套配色（已唱色 / 未唱色）
+  if ((prevProps.activeLine == prevProps.lineNum) !== (nextProps.activeLine == nextProps.lineNum)) return false
+  // 其余情况：当前行的逐字进度由组件自身的 state 推进，与父组件无关，不用跟着重画
+  return true
 })
 const wait = async() => new Promise(resolve => setTimeout(resolve, 100))
 
 export default () => {
   const lyricLines = useLrcSet()
+  const awlrc = useAwlrc()
   const { line } = useLrcPlay()
   const flatListRef = useRef<FlatList>(null)
   const playLineRef = useRef<PlayLineType>(null)
@@ -299,7 +321,7 @@ export default () => {
 
   const renderItem: FlatListType['renderItem'] = ({ item, index }) => {
     return (
-      <LrcLine line={item} lineNum={index} activeLine={line} onLayout={handleLineLayout} />
+      <LrcLine line={item} lineNum={index} activeLine={line} awlrc={awlrc} onLayout={handleLineLayout} />
     )
   }
   const getkey: FlatListType['keyExtractor'] = (item, index) => `${index}${item.text}`
