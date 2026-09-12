@@ -221,6 +221,28 @@ export const supportQualitys: LX.Quality[] = ['128k']
  */
 export { songList }
 
+/**
+ * 歌曲在网页端的详情页地址。
+ *
+ * ## 为什么必须存在（哪怕返回空串）
+ *
+ * `utils/tools.ts` 的 `shareMusic` 是这么写的：
+ *
+ * ```js
+ * musicSdk[musicInfo.source]?.getMusicDetailPageUrl(...) ?? ''
+ * ```
+ *
+ * `?.` 只保住了 `musicSdk[source]` 本身，**保不住方法**。对象存在但没有这个方法时，
+ * 它变成 `undefined(...)`，直接抛 `TypeError: undefined is not a function` ——
+ * 表现就是**一点「分享」就报错**（日志栈里 `shareMusic` → `handleShare`）。
+ *
+ * any-listen 是自建服务，没有公开的歌曲网页，所以如实返回空串：
+ * 分享内容里就不带链接，而不是崩掉。
+ */
+export function getMusicDetailPageUrl(): string {
+  return ''
+}
+
 export default {
   init,
   musicSearch,
@@ -228,6 +250,10 @@ export default {
   getMusicUrl: fetchMusicUrl,
   getPic: fetchPic,
   getLyric: fetchLyric,
-  // 不提供 leaderboard / hotSearch：any-listen 没有对应的服务端能力，
-  // 缺失这些的源会被 lx 的 UI 自动禁用相应入口，而不是报错。
+  getMusicDetailPageUrl,
+  // 不提供 leaderboard / hotSearch / comment：any-listen 没有对应的服务端能力。
+  //
+  // ⚠️ 但这些入口的调用点未必都做了防御。已知 `shareMusic` 用 `?.` 只保住了
+  // 对象、没保住方法，缺一个方法就会 `TypeError`。新增能力时请一并检查调用点，
+  // 不要假设「不实现就等于自动禁用」。
 }

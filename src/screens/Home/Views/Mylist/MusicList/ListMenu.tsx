@@ -77,7 +77,9 @@ export default forwardRef<ListMenuType, ListMenuProps>((props, ref) => {
       { action: 'changePosition', label: t('change_position') },
       { action: 'toggleSource', label: t('toggle_source') },
       { action: 'copyName', label: t('copy_name') },
-      { action: 'musicSourceDetail', disabled: isLocal, label: t('music_source_detail') },
+      // 「歌曲详情」（musicSourceDetail）在上游是打开该曲目在**商业平台网页**上的页面。
+      // any-listen 是自建服务、没有这种网页，适配器的 getMusicDetailPageUrl 只能返回空串，
+      // 于是点了没有任何反应 —— 留一个按了不动的菜单项不如去掉。
       { action: 'removeCache', disabled: !has_url_cache, label: t('list_remove_cache') },
       // { action: 'musicSearch', label: t('music_search') },
       { action: 'dislike', disabled: hasDislike(musicInfo), label: t('dislike') },

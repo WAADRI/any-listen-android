@@ -35,9 +35,11 @@ export default memo(({ item, index, activeIndex, onPress, onShowMenu, onLongPres
   // 已知音源打出来，便于区分「source 存错了」还是「qualityList 没发布」。
   useEffect(() => {
     if (isSupported) return
+    const list = global.lx.qualityList ?? {}
     console.log(
       `[anylisten] 曲目被判定为不可播放：source=${JSON.stringify(item.source)}`
-      + ` qualityList=${JSON.stringify(Object.keys(global.lx.qualityList ?? {}))}`
+      + ` 该源的音质档=${JSON.stringify((list as Record<string, unknown>)[item.source])}`
+      + ` qualityList全部键=${JSON.stringify(Object.keys(list))}`
       + ` name=${item.name ?? ''}`,
     )
   }, [isSupported, item.source, item.name])
