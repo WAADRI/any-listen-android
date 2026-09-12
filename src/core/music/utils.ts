@@ -397,6 +397,11 @@ export const handleGetOnlinePicUrl = async({ musicInfo, isRefresh, onToggleSourc
   musicInfo: LX.Music.MusicInfoOnline
   isFromCache: boolean
 }> => {
+  // 与取址、歌词一致：先等音源就绪再发 RPC。
+  // any-listen 的会话在 `connecting` 时会让 RPC **立即失败**，而恢复播放的
+  // 封面/歌词请求正好赶在连接建立之前（见 handleGetOnlineLyricInfo 的说明）。
+  // 服务端直接给了 meta.picUrl 时上层会短路，但搜索/刷新等路径会走到这里。
+  if (!await global.lx.apiInitPromise[0]) throw new Error('source init failed')
   // console.log(musicInfo.source)
   let reqPromise
   try {
@@ -488,6 +493,24 @@ export const handleGetOnlineLyricInfo = async({ musicInfo, onToggleSource, isRef
   lyricInfo: LX.Music.LyricInfo | LX.Player.LyricInfo
   isFromCache: boolean
 }> => {
+  /**
+   * ⚠️ 取歌词也必须先等音源就绪，与 `handleGetOnlineMusicUrl` 一样。
+   *
+   * ## 少了这一行会怎样（真机复现过的缺陷）
+   *
+   * 「记住播放进度」开启时，恢复播放的歌词是**启动后第一个发出的 RPC**
+   * （`core/player/player.ts` 的 `handleRestorePlay` 先取歌词、之后才 `setMusicUrl`）。
+   * 此刻 any-listen 的 socket 一般还在 `connecting`，而
+   * `AnyListenSession.call()` 在未连接时是**立即 reject**（不排队、不重试）：
+   *
+   *     连接未就绪（当前状态 connecting）
+   *
+   * 于是界面把状态文字设成「歌词获取失败」，并且**再也不会重试** ——
+   * 用户看到的是「歌能放、封面对，只有歌词一直失败」。
+   *
+   * 取址之所以没事，是因为它等了这道门禁；歌词与封面原先漏了。
+   */
+  if (!await global.lx.apiInitPromise[0]) throw new Error('source init failed')
   // console.log(musicInfo.source)
   let reqPromise
   try {
