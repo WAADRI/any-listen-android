@@ -213,21 +213,50 @@ export const confirmDialog = async({
   })
 }
 
+/**
+ * 提示对话框。
+ *
+ * ## 为什么有 copyText
+ *
+ * 这个对话框在初始化失败时承载**崩溃堆栈**，而 RN 的 `Alert` 文本无法选中、
+ * 也无法复制 —— 报错的人只能截图，截图里的堆栈常常截不全、也没法搜索。
+ * 传入 `copyText` 会多出一个「复制」按钮，让用户能把原文贴出来。
+ * 崩溃路径（app.ts 的初始化失败分支）都传了它。
+ */
 export const tipDialog = async({
   title = '',
   message = '',
   btnText = global.i18n.t('dialog_confirm'),
   bgClose = true,
+  copyText,
+}: {
+  title?: string
+  message?: string
+  btnText?: string
+  bgClose?: boolean
+  /** 传入后显示「复制」按钮，点击把它写入剪贴板。 */
+  copyText?: string
 }) => {
   return new Promise<void>(resolve => {
-    Alert.alert(title, message, [
-      {
-        text: btnText,
+    const buttons: Parameters<typeof Alert.alert>[2] = []
+    if (copyText) {
+      buttons.push({
+        text: global.i18n.t('dialog_copy'),
         onPress() {
+          Clipboard.setString(copyText)
+          toast(global.i18n.t('copy_name_tip'))
           resolve()
         },
+      })
+    }
+    buttons.push({
+      text: btnText,
+      onPress() {
+        resolve()
       },
-    ], {
+    })
+
+    Alert.alert(title, message, buttons, {
       cancelable: bgClose,
       onDismiss() {
         resolve()

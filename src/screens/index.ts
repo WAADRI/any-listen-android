@@ -1,7 +1,7 @@
 export { default as Home } from './Home'
 export { default as PlayDetail } from './PlayDetail'
 export { default as SonglistDetail } from './SonglistDetail'
-export { default as Comment } from './Comment'
+// Comment 界面已删除：评论依赖各商业音源的接口，any-listen 不提供。
 // export { default as Setting } from './Setting'
 // export { default as LoginScreen } from './LoginScreen/LoginScreen'
 // export { default as SingleAppScreen } from './SingleAppScreen/SingleAppScreen'

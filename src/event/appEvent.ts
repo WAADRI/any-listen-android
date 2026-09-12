@@ -1,8 +1,6 @@
 import { setNavActiveId } from '@/core/common'
 import Event from './Event'
 import commonState from '@/store/common/state'
-import { type Source as SonglistSource } from '@/store/songlist/state'
-import { type SearchType } from '@/store/search/state'
 
 
 // {
@@ -166,9 +164,7 @@ export class AppEvent extends Event {
    * 搜索类型改变事件
    * @param type
    */
-  searchTypeChanged(type: SearchType) {
-    this.emit('searchTypeChanged', type)
-  }
+  // searchTypeChanged 已随「歌曲 / 歌单」切换器一起删除：搜索只剩本机曲库一个对象。
 
   jumpListPosition() {
     if (commonState.navActiveId == 'nav_love') {
@@ -186,21 +182,9 @@ export class AppEvent extends Event {
     this.emit('changeLoveListVisible', visible)
   }
 
-  showSonglistTagList(source: SonglistSource, activeId: string) {
-    this.emit('showSonglistTagList', source, activeId)
-  }
-
-  hideSonglistTagList() {
-    this.emit('hideSonglistTagList')
-  }
-
-  songlistTagInfoChange(name: string, id: string) {
-    this.emit('songlistTagInfoChange', name, id)
-  }
-
-  selectSyncMode(mode: LX.Sync.ModeType) {
-    this.emit('selectSyncMode', mode)
-  }
+  // 歌单分类标签相关事件（showSonglistTagList / hideSonglistTagList /
+  // songlistTagInfoChange）已随标签筛选按钮一起删除：any-listen 没有歌单分类。
+  // selectSyncMode 已随同步子系统一起删除。
 }
 
 

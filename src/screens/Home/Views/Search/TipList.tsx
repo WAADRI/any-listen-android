@@ -12,8 +12,24 @@ import { debounce } from '@/utils'
 export const ITEM_HEIGHT = scaleSizeH(36)
 
 export const debounceTipSearch = debounce((keyword: string, source: SearchState['temp_source'], callback: (list: string[]) => void) => {
-  // console.log(reslutList)
-  void musicSdk[source].tipSearch.search(keyword).then(callback)
+  /**
+   * 联想是**可选能力**：音源可以不提供 `tipSearch`（本 fork 的 anylisten
+   * 只在曲库就绪后才给候选词，`'all'` 更是根本没有这个对象）。
+   *
+   * 上游这里写的是 `musicSdk[source].tipSearch.search(keyword)`，任何一处缺失
+   * 都会在**每次按键**后抛 `TypeError: Cannot read property 'search' of undefined`
+   * —— 用户在搜索框里打字就一直弹错误。
+   *
+   * 所以缺能力就当没有候选词：不报错、不外抛，把 `.then(callback)` 也一起
+   * 收进 try，避免 promise 链上的 rejection 变成未处理异常。
+   */
+  void Promise.resolve()
+    .then(() => musicSdk[source]?.tipSearch?.search?.(keyword) ?? [])
+    .then(callback)
+    .catch((err: unknown) => {
+      console.warn('[search] 联想词获取失败：', err instanceof Error ? err.message : String(err))
+      callback([])
+    })
 }, 200)
 
 

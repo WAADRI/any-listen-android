@@ -30,9 +30,6 @@ import state, { type InitState } from './state'
 
 
 export default {
-  setSearchType(type: InitState['searchType']) {
-    state.searchType = type
-  },
   setSearchText(text: string) {
     state.searchText = text
   },

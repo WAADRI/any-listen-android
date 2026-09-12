@@ -3,7 +3,6 @@ import { View } from 'react-native'
 import PlayModeBtn from './PlayModeBtn'
 import MusicAddBtn from './MusicAddBtn'
 import DesktopLyricBtn from './DesktopLyricBtn'
-import CommentBtn from './CommentBtn'
 
 export default () => {
   return (
@@ -11,7 +10,9 @@ export default () => {
       <DesktopLyricBtn />
       <MusicAddBtn />
       <PlayModeBtn />
-      <CommentBtn />
+      {/* 评论按钮已移除：any-listen 没有评论接口，点进去只会报
+          「Permission denied」（`music[source].comment` 不存在）。
+          留着一个必然失败的入口没有意义。 */}
     </View>
   )
 }

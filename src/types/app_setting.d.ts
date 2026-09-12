@@ -22,6 +22,20 @@ declare global {
       'common.apiSource': string
 
       /**
+       * any-listen 服务器地址。
+       * 形如 `https://music.example.com`，可带反代子路径，不要以斜杠结尾。
+       */
+      'anylisten.serverUrl': string
+
+      /**
+       * any-listen 访问密码。与 Web 端登录使用同一个密码。
+       *
+       * 注意：它需要与桌面端/Web 端一致才能读到同一个曲库。
+       * 密码以明文存在应用的本地存储里（与 lx 自身的同步服务器密码同等对待）。
+       */
+      'anylisten.password': string
+
+      /**
        * 音源名称类型，原名、别名
        */
       'common.sourceNameType': 'alias' | 'real'
@@ -307,11 +321,6 @@ declare global {
       'desktopLyric.style.lyricShadowColor': string
 
       /**
-       * 是否显示热门搜索
-       */
-      'search.isShowHotSearch': boolean
-
-      /**
        * 是否显示搜索历史
        */
       'search.isShowHistorySearch': boolean
@@ -350,11 +359,6 @@ declare global {
        * 文件命名方式
        */
       'download.fileName': '歌名 - 歌手' | '歌手 - 歌名' | '歌名'
-
-      /**
-       * 是否启用同步
-       */
-      'sync.enable': boolean
     }
   }
 }

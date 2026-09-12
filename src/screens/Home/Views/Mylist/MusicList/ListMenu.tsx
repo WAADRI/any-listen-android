@@ -22,7 +22,6 @@ export interface ListMenuProps {
   onEditMetadata: (selectInfo: SelectInfo) => void
   onCopyName: (selectInfo: SelectInfo) => void
   onChangePosition: (selectInfo: SelectInfo) => void
-  onToggleSource: (selectInfo: SelectInfo) => void
   onMusicSourceDetail: (selectInfo: SelectInfo) => void
   onRemoveCache: (selectInfo: SelectInfo) => void
   onDislikeMusic: (selectInfo: SelectInfo) => void
@@ -75,9 +74,14 @@ export default forwardRef<ListMenuType, ListMenuProps>((props, ref) => {
       { action: 'add', label: t('add_to') },
       { action: 'move', label: t('move_to') },
       { action: 'changePosition', label: t('change_position') },
-      { action: 'toggleSource', label: t('toggle_source') },
+      // 「歌曲换源」（toggleSource）已删除：换源是在**多个商业平台**之间
+      // 找同一首歌的替代来源，本 fork 只有一个自建音源（anylisten），
+      // 兜底查询按设计返回空数组，点进去只会失败；而且这个菜单项本身就
+      // 被用户当成「播放源坏了」的开关误触过。
       { action: 'copyName', label: t('copy_name') },
-      { action: 'musicSourceDetail', disabled: isLocal, label: t('music_source_detail') },
+      // 「歌曲详情」（musicSourceDetail）在上游是打开该曲目在**商业平台网页**上的页面。
+      // any-listen 是自建服务、没有这种网页，适配器的 getMusicDetailPageUrl 只能返回空串，
+      // 于是点了没有任何反应 —— 留一个按了不动的菜单项不如去掉。
       { action: 'removeCache', disabled: !has_url_cache, label: t('list_remove_cache') },
       // { action: 'musicSearch', label: t('music_search') },
       { action: 'dislike', disabled: hasDislike(musicInfo), label: t('dislike') },
@@ -135,10 +139,6 @@ export default forwardRef<ListMenuType, ListMenuProps>((props, ref) => {
         break
       case 'changePosition':
         props.onChangePosition(selectInfo)
-        // setVIsibleMusicPosition(true)
-        break
-      case 'toggleSource':
-        props.onToggleSource(selectInfo)
         // setVIsibleMusicPosition(true)
         break
       case 'musicSourceDetail':

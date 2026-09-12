@@ -6,7 +6,6 @@ import { createStyle } from '@/utils/tools'
 import { forwardRef, useImperativeHandle, useRef, useState } from 'react'
 import { ScrollView, View } from 'react-native'
 import HistorySearch, { type HistorySearchType } from './HistorySearch'
-import HotSearch, { type HotSearchType } from './HotSearch'
 
 interface BlankViewProps {
   onSearch: (keyword: string) => void
@@ -17,18 +16,21 @@ export interface BlankViewType {
   show: (source: Source) => void
 }
 
+/**
+ * 搜索页的空白态。
+ *
+ * 上游这里还有「热门搜索」（`HotSearch`），数据来自各商业音源的榜单接口；
+ * any-listen 没有这个能力，`store/hotSearch` 里连一个源都注册不上，
+ * 打开设置开关也只会是一片空白，故连同设置项一起删除。
+ */
 export default forwardRef<BlankViewType, BlankViewProps>(({ onSearch }, ref) => {
-  // const [listType, setListType] = useState<SearchState['searchType']>('music')
   const [visible, setVisible] = useState(false)
-  const hotSearchRef = useRef<HotSearchType>(null)
   const historySearchRef = useRef<HistorySearchType>(null)
-  const isShowHotSearch = useSettingValue('search.isShowHotSearch')
   const isShowHistorySearch = useSettingValue('search.isShowHistorySearch')
   const t = useI18n()
   const theme = useTheme()
 
-  const handleShow = (source: Source) => {
-    hotSearchRef.current?.show(source)
+  const handleShow = (_source: Source) => {
     historySearchRef.current?.show()
   }
 
@@ -46,12 +48,11 @@ export default forwardRef<BlankViewType, BlankViewProps>(({ onSearch }, ref) => 
 
   return (
     visible
-      ? isShowHotSearch || isShowHistorySearch
+      ? isShowHistorySearch
         ? (
             <ScrollView>
               <View style={styles.content}>
-                { isShowHotSearch ? <HotSearch ref={hotSearchRef} onSearch={onSearch} /> : null }
-                { isShowHistorySearch ? <HistorySearch ref={historySearchRef} onSearch={onSearch} /> : null }
+                <HistorySearch ref={historySearchRef} onSearch={onSearch} />
               </View>
             </ScrollView>
           )

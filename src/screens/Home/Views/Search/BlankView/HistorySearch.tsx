@@ -1,6 +1,5 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { TouchableOpacity, View } from 'react-native'
-import { type InitState } from '@/store/hotSearch/state'
 import Button from '@/components/common/Button'
 import Text from '@/components/common/Text'
 import { createStyle } from '@/utils/tools'
@@ -10,7 +9,8 @@ import { clearHistoryList, getSearchHistory, removeHistoryWord } from '@/core/se
 import { Icon } from '@/components/common/Icon'
 
 
-export type List = NonNullable<InitState['sourceList'][keyof InitState['sourceList']]>
+/** 历史搜索就是一串关键词（原先借用热门搜索 store 的类型）。 */
+export type List = string[]
 
 const ListItem = ({ keyword, onSearch, onRemove }: {
   keyword: string

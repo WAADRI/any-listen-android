@@ -25,7 +25,7 @@ export interface InitState {
 
 const state: InitState = {
   searchText: '',
-  source: 'kw',
+  source: 'anylisten',
   sources: [],
   listInfos: {
     all: {
@@ -53,6 +53,9 @@ for (const source of music.sources) {
   }
   state.maxPages[source.id as LX.OnlineSource] = 0
 }
-state.sources.push('all')
+// 不再提供「聚合大会」（`'all'`）：本 fork 只有 anylisten 一个源，
+// 「聚合」与单源搜索的结果完全相同，多一个入口只会让人以为能搜到别的东西。
+// `listInfos.all` 与 `core/search/music.ts` 里的 `'all'` 分支保留着，
+// 但已没有任何界面能把 source 设成 `'all'`。
 
 export default state

@@ -80,5 +80,12 @@ module.exports = {
     '*.min.js',
     'test.js',
     '*Test.ts',
+    // Node 测试运行器用的单测（`node --test`）。
+    // 它们不进应用包（Metro 只打包入口可达的模块），而且会被 CI 真正执行，
+    // 因此这里不再叠一层类型感知 lint —— 那会让「测试写得对不对」
+    // 取决于 lint 规则而不是断言本身。
+    '*.test.ts',
+    '*.test.tsx',
+    'tools/',
   ],
 }

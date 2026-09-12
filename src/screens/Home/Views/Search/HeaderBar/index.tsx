@@ -12,9 +12,9 @@ import SearchInput, { type SearchInputType, type SearchInputProps } from './Sear
 import { createStyle } from '@/utils/tools'
 import { useTheme } from '@/store/theme/hook'
 import { type Source as MusicSource } from '@/store/search/music/state'
-import { type Source as SonglistSource } from '@/store/search/songlist/state'
 
-type Sources = Readonly<Array<MusicSource | SonglistSource>>
+// 上游这里还有 `SonglistSource`（「歌单」标签页的源）。那套歌单搜索已删除。
+type Sources = Readonly<Array<MusicSource>>
 type SourceSelectorProps = _SourceSelectorProps<Sources>
 type SourceSelectorType = _SourceSelectorType<Sources>
 

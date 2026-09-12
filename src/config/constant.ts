@@ -51,10 +51,6 @@ export const storageDataPrefix = {
   musicOtherSource: '@music_other_source__',
   playInfo: '@play_info',
 
-  syncAuthKey: '@sync_auth_key',
-  syncHost: '@sync_host',
-  syncHostHistory: '@sync_host_history',
-
   openStoragePath: '@open_storage_path',
   selectedManagedFolder: '@selected_managed_folder',
   notificationTipEnable: '@notification_tip_enable',
@@ -62,9 +58,6 @@ export const storageDataPrefix = {
 
   searchHistoryList: '@search_history_list',
   listUpdateInfo: '@list_update_info',
-  ignoreVersion: '@ignore_version',
-  ignoreVersionFailTipTimeKey: '@ignore_version_fail_tip_time',
-  leaderboardSetting: '@leaderboard_setting',
   songListSetting: '@songist_setting',
   searchSetting: '@search_setting',
 
@@ -101,7 +94,8 @@ export const APP_PROVIDER_NAME = 'cn.toside.music.mobile.provider'
 export const NAV_MENUS = [
   { id: 'nav_search', icon: 'search-2' },
   { id: 'nav_songlist', icon: 'album' },
-  { id: 'nav_top', icon: 'leaderboard' },
+  // 排行榜（nav_top）在上游由各在线音源的榜单接口支撑，而 any-listen 不提供
+  // 榜单能力，留下它只会是一个永远空白的页面。故移除。
   { id: 'nav_love', icon: 'love' },
   // { id: 'download', icon: 'download-2' },
   { id: 'nav_setting', icon: 'setting' },
@@ -129,22 +123,24 @@ export const MUSIC_TOGGLE_MODE_LIST = [
 ] as const
 
 export const DEFAULT_SETTING = {
-  leaderboard: {
-    source: 'kw' as LX.OnlineSource,
-    boardId: 'kw__16',
-  },
-
+  // songList 对应的服务端能力（在线歌单广场）any-listen 不提供，
+  // 这里把源写成 anylisten 只是为了让「读回来的旧设置里还是 'kw'」能落到有效值上。
+  // 排行榜（leaderboard）配置已随排行榜界面一起删除。
   songList: {
-    source: 'kw' as LX.OnlineSource,
+    source: 'anylisten' as LX.OnlineSource,
     sortId: 'new',
     tagName: '',
     tagId: '',
   },
 
   search: {
-    temp_source: 'kw' as LX.OnlineSource,
-    source: 'all' as LX.OnlineSource | 'all',
-    type: 'music' as 'music' | 'songlist',
+    temp_source: 'anylisten' as LX.OnlineSource,
+    // 只有一个音源，不存在「聚合搜索」。旧版本存过 'all'，
+    // `Search/index.tsx` 会在读取设置时校验并回退到第一个可用源。
+    //
+    // 上游还有 `type: 'music' | 'songlist'`（「歌曲 / 歌单」标签页），
+    // 歌单搜索已删除，这个字段不再有意义。
+    source: 'anylisten' as LX.OnlineSource | 'all',
   },
 
   viewPrevState: {

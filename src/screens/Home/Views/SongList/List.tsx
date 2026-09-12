@@ -6,7 +6,14 @@ import { type Source } from '@/store/songlist/state'
 
 
 export interface ListType {
-  loadList: (source: Source, sortId: string, tagId: string) => void
+  /**
+   * 加载歌单列表。
+   *
+   * 返回 promise 是**有意**的（实现里本来就 return 了 `getList(...)`）：
+   * 调用方需要知道「这一页拉完了」，才能判断首屏是不是真的为空。
+   * 早先这里标成 `void`，调用方就无法等待，也就没法自动重试空首屏。
+   */
+  loadList: (source: Source, sortId: string, tagId: string) => Promise<void>
 }
 
 export default forwardRef<ListType, {}>((props, ref) => {

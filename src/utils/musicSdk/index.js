@@ -1,174 +1,77 @@
-import kw from './kw'
-import kg from './kg'
-import tx from './tx'
-import wy from './wy'
-import mg from './mg'
-// import bd from './bd'
-import xm from './xm'
-import { supportQuality } from './api-source'
-import { versionChars } from './versionChars'
+/**
+ * 本 fork 的音源注册表。
+ *
+ * ## 这个文件为什么是 `.js` 而不是 `.ts`
+ *
+ * 它沿用上游的路径与扩展名（`@/utils/musicSdk`），且**必须是纯 JavaScript**：
+ * Metro 的 Babel 对 `.js` 文件**不做 TypeScript 类型擦除**，
+ * 写类型标注会直接变成语法错误（曾经写成 `(x: string): x is T =>` 导致
+ * `Unexpected token` 打包失败，而 lint 与单测都不会发现）。
+ * 因此这里的类型信息一律用 JSDoc 表达。
+ *
+ * ## 与上游的差别
+ *
+ * 上游注册的是 kw / kg / tx / wy / mg 五个**第三方商业音乐平台**的音源
+ * （约 240 个文件），并带一套跨源兜底逻辑。本 fork 只使用用户**自建**的
+ * any-listen 服务器，所以这里只注册一个源。
+ *
+ * 目录里仍留有 `kw/`、`kg/` 等目录，但它们**已不被任何代码引用**，
+ * 下一步会单独删除。之所以分两步：先让新链路跑通并验证，再删代码 ——
+ * 否则一旦出问题，无法区分是「新链路写错了」还是「删错了」。
+ *
+ * ## 导出形状
+ *
+ * 与上游一致，因此所有 `import musicSdk from '@/utils/musicSdk'` 的调用点都不用改：
+ * - `musicSdk[sourceId]` → 单个源对象
+ * - `musicSdk.sources` → `[{ name, id }]`，被歌单页、热搜页遍历
+ * - `musicSdk.supportQuality` → `Partial<Record<OnlineSource, Quality[]>>`
+ *   （**音源 id → 音质数组**，一层）
+ *
+ * ⚠️ `supportQuality` 是**一层**结构，与上游不同：上游是
+ * `apiId → 音源表` 的两层结构，所以上游的 `core/apiSource.ts` 写的是
+ * `global.lx.qualityList = supportQuality[apiId]`。本 fork 照抄那一行会发布
+ * 音质**数组**本身，导致整个曲库灰显 —— 因此这里的一层结构必须搭配
+ * `toQualityList(apiId, supportQuality[apiId])` 使用（见 `qualityList.ts`）。
+ *
+ * ## 保留 findMusic 的理由
+ *
+ * 上游的 `findMusic` 是「这首歌取不到就去别的源碰运气」的兜底，
+ * 它在 `core/music/utils.ts` 的取址失败分支里**仍在关键路径上**。
+ * 单源情况下它只会返回空数组，调用方随即放弃兜底并抛出原始错误 ——
+ * 这正是我们想要的行为（失败就明确失败，不要瞎猜）。
+ *
+ * 上游的 `searchMusic`（跨源搜索聚合）**已删除**：它唯一的消费者是
+ * 「歌曲换源」弹窗（`MusicToggleModal`），而换源在多源场景才有意义，
+ * 本 fork 已把该弹窗连同菜单项一起删掉。单源搜索走的是
+ * `musicSdk[source].musicSearch`，与它无关。
+ */
+import anylisten, { supportQualitys } from './anylisten'
 
+const sources = [
+  {
+    // 显示名。UI 会优先查 i18n 的 `source_alias_<id>` / `source_real_<id>`，
+    // 查不到才回落到这个名字。
+    name: 'any-listen',
+    id: 'anylisten',
+  },
+]
 
-const sources = {
-  sources: [
-    {
-      name: '酷我音乐',
-      id: 'kw',
-    },
-    {
-      name: '酷狗音乐',
-      id: 'kg',
-    },
-    {
-      name: 'QQ音乐',
-      id: 'tx',
-    },
-    {
-      name: '网易音乐',
-      id: 'wy',
-    },
-    {
-      name: '咪咕音乐',
-      id: 'mg',
-    },
-    // {
-    //   name: '百度音乐',
-    //   id: 'bd',
-    // },
-  ],
-  kw,
-  kg,
-  tx,
-  wy,
-  mg,
-  // bd,
-  xm,
+/** @type {Partial<Record<LX.OnlineSource, LX.Quality[]>>} */
+const supportQuality = {
+  anylisten: supportQualitys,
 }
-export default {
-  ...sources,
+
+const musicSdk = {
+  sources,
+  anylisten,
   supportQuality,
 }
 
-export const init = () => {
-  const tasks = []
-  for (let source of sources.sources) {
-    let sm = sources[source.id]
-    sm && sm.init && tasks.push(sm.init())
-  }
-  return Promise.all(tasks)
-}
+export default musicSdk
 
+/**
+ * 「换个源再试」的兜底。单源情况下**按设计**返回空数组，见文件头说明。
+ * @returns {Promise<unknown[]>}
+ */
+export const findMusic = async() => []
 
-export const searchMusic = async({ name, singer, source: s, limit = 25 }) => {
-  const trimStr = str => typeof str == 'string' ? str.trim() : str
-  const musicName = trimStr(name)
-  const tasks = []
-  const excludeSource = ['xm']
-  for (const source of sources.sources) {
-    if (!sources[source.id].musicSearch || source.id == s || excludeSource.includes(source.id)) continue
-    tasks.push(sources[source.id].musicSearch.search(`${musicName} ${singer || ''}`.trim(), 1, limit).catch(_ => null))
-  }
-  return (await Promise.all(tasks)).filter(s => s)
-}
-
-export const findMusic = async(musicInfo) => {
-  const { name, singer, albumName, interval, source: s } = musicInfo
-
-  const lists = await searchMusic({ name, singer, source: s, limit: 25 })
-
-  const singersRxp = /、|&|;|；|\/|,|，|\|/
-  const sortSingle = singer => singersRxp.test(singer)
-    ? singer.split(singersRxp).sort((a, b) => a.localeCompare(b)).join('、')
-    : (singer || '')
-  const sortMusic = (arr, callback) => {
-    const tempResult = []
-    for (let i = arr.length - 1; i > -1; i--) {
-      const item = arr[i]
-      if (callback(item)) {
-        delete item.fSinger
-        delete item.fMusicName
-        delete item.fAlbumName
-        delete item.fInterval
-        tempResult.push(item)
-        arr.splice(i, 1)
-      }
-    }
-    tempResult.reverse()
-    return tempResult
-  }
-  const getIntv = (interval) => {
-    if (!interval) return 0
-    // if (musicInfo._interval) return musicInfo._interval
-    let intvArr = interval.split(':')
-    let intv = 0
-    let unit = 1
-    while (intvArr.length) {
-      intv += parseInt(intvArr.pop()) * unit
-      unit *= 60
-    }
-    return intv
-  }
-  const trimStr = str => typeof str == 'string' ? str.trim() : (str || '')
-  const filterStr = str => typeof str == 'string' ? str.replace(/\s|'|\.|,|，|&|"|、|\(|\)|（|）|`|~|-|<|>|\||\/|\]|\[|!|！/g, '') : String(str || '')
-  const fMusicName = filterStr(name).toLowerCase()
-  const fSinger = filterStr(sortSingle(singer)).toLowerCase()
-  const fAlbumName = filterStr(albumName).toLowerCase()
-  const fInterval = getIntv(interval)
-  const isEqualsInterval = (intv) => Math.abs((fInterval || intv) - (intv || fInterval)) <= 5
-  const isEqualsVersionMusicNameChar = (name) => {
-    for (const char of versionChars) {
-      if (name.includes(char) != fMusicName.includes(char)) return false
-    }
-    return true
-  }
-  const isIncludesName = (name) => (fMusicName.includes(name) || name.includes(fMusicName)) && isEqualsVersionMusicNameChar(name)
-  const isIncludesSinger = (singer) => fSinger ? (fSinger.includes(singer) || singer.includes(fSinger)) : true
-  const isEqualsAlbum = (album) => fAlbumName ? fAlbumName == album : true
-
-  const result = lists.map(source => {
-    for (const item of source.list) {
-      item.name = trimStr(item.name)
-      item.singer = trimStr(item.singer)
-      item.fSinger = filterStr(sortSingle(item.singer).toLowerCase())
-      item.fMusicName = filterStr(String(item.name ?? '').toLowerCase())
-      item.fAlbumName = filterStr(String(item.albumName ?? '').toLowerCase())
-      item.fInterval = getIntv(item.interval)
-      // console.log(fMusicName, item.fMusicName, item.source)
-      if (!isEqualsInterval(item.fInterval)) {
-        item.name = null
-        continue
-      }
-      if (item.fMusicName == fMusicName && isIncludesSinger(item.fSinger)) return item
-    }
-    for (const item of source.list) {
-      if (item.name == null) continue
-      if (item.fSinger == fSinger && isIncludesName(item.fMusicName)) return item
-    }
-    for (const item of source.list) {
-      if (item.name == null) continue
-      if (isEqualsAlbum(item.fAlbumName) && isIncludesSinger(item.fSinger) && isIncludesName(item.fMusicName)) return item
-    }
-    return null
-  }).filter(s => s)
-  const newResult = []
-  if (result.length) {
-    newResult.push(...sortMusic(result, item => item.fSinger == fSinger && item.fMusicName == fMusicName && item.interval == interval))
-    newResult.push(...sortMusic(result, item => item.fMusicName == fMusicName && item.fSinger == fSinger && item.fAlbumName == fAlbumName))
-    newResult.push(...sortMusic(result, item => item.fSinger == fSinger && item.fMusicName == fMusicName))
-    newResult.push(...sortMusic(result, item => item.fMusicName == fMusicName && item.interval == interval))
-    newResult.push(...sortMusic(result, item => item.fSinger == fSinger && item.interval == interval))
-    newResult.push(...sortMusic(result, item => item.interval == interval))
-    newResult.push(...sortMusic(result, item => item.fMusicName == fMusicName))
-    newResult.push(...sortMusic(result, item => item.fSinger == fSinger))
-    newResult.push(...sortMusic(result, item => item.fAlbumName == fAlbumName))
-    for (const item of result) {
-      delete item.fSinger
-      delete item.fMusicName
-      delete item.fAlbumName
-      delete item.fInterval
-    }
-    newResult.push(...result)
-  }
-  // console.log(newResult)
-  return newResult
-}

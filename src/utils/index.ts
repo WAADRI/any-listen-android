@@ -73,6 +73,16 @@ export const toNewMusicInfo = (oldMusicInfo: any): LX.Music.MusicInfo => {
         meta.mrcUrl = oldMusicInfo.mrcUrl
         meta.trcUrl = oldMusicInfo.trcUrl
         break
+      case 'anylisten':
+        // 服务端原始对象必须原样带走：getMusicUrl / getMusicPic / getMusicLyric
+        // 都依赖它里面 lx 模型没有的字段（isLocal、meta.filePath…），
+        // 重建一个精简对象会让服务端返回 200 但给出错误结果。
+        // 详见 src/utils/anylisten/convert.ts 的说明。
+        meta.source = 'anylisten'
+        meta.anylisten = oldMusicInfo.anylisten
+        meta.anylistenIsLocal = oldMusicInfo.anylisten?.isLocal === true
+        meta.anylistenFilePath = oldMusicInfo.anylisten?.meta?.filePath
+        break
     }
   }
 
@@ -115,6 +125,15 @@ export const toOldMusicInfo = (minfo: LX.Music.MusicInfo): any => {
         oInfo.lrcUrl = minfo.meta.lrcUrl
         oInfo.mrcUrl = minfo.meta.mrcUrl
         oInfo.trcUrl = minfo.meta.trcUrl
+        break
+      case 'anylisten':
+        // 必须原样带走服务端原始对象。
+        //
+        // 取址链路是 core/music/utils.ts → musicSdk[source].getMusicUrl(toOldMusicInfo(musicInfo))，
+        // 也就是说适配器**只能**从这个扁平对象里拿服务端数据。
+        // 漏掉这一行的话，适配器取不到原始对象、每首歌都会抛错 ——
+        // 而类型检查与打包都不会有任何提示。
+        oInfo.anylisten = minfo.meta.anylisten
         break
     }
   }

@@ -5,13 +5,13 @@ import initI18n from './i18n'
 import initUserApi from './userApi'
 import initPlayer from './player'
 import dataInit from './dataInit'
-import initSync from './sync'
 import initCommonState from './common'
+import initAnyListen from './anylisten'
 import { initDeeplink } from './deeplink'
 import { setApiSource } from '@/core/apiSource'
+import { log } from '@/utils/log'
 import commonActions from '@/store/common/action'
 import settingState from '@/store/setting/state'
-import { checkUpdate } from '@/core/version'
 import { bootLog } from '@/utils/bootLog'
 import { cheatTip } from '@/utils/tools'
 
@@ -21,7 +21,6 @@ const handlePushedHomeScreen = async() => {
   if (settingState.setting['common.isAgreePact']) {
     if (isFirstPush) {
       isFirstPush = false
-      void checkUpdate()
       void initDeeplink()
     }
   } else {
@@ -48,7 +47,18 @@ export default async() => {
   await initUserApi(setting)
   bootLog('User Api inited.')
 
-  setApiSource(setting['common.apiSource'])
+  // 必须在 setApiSource 之前：后者会读取 musicSdk.supportQuality，
+  // 并把播放门禁 apiInitPromise 接到这里返回的初始化 promise 上。
+  //
+  // 不 await：连接慢不应阻塞界面启动。门禁由 setApiSource 自行落定
+  // （成功置为可用，失败置为不可用并打日志），所以这里也不加 catch ——
+  // 加了反而会掩盖失败。
+  //
+  // 这行日志是排查的起点：装到手机上出问题时，先看它有没有出现，
+  // 就能判断是「卡在初始化之前」还是「初始化之后才失败」。
+  log.info('[anylisten] 开始初始化音源')
+  setApiSource(setting['common.apiSource'], initAnyListen())
+  bootLog('AnyListen providers inited.')
   bootLog('Api inited.')
 
   registerPlaybackService()
@@ -59,11 +69,6 @@ export default async() => {
   bootLog('Data inited.')
   await initCommonState(setting)
   bootLog('Common State inited.')
-
-  void initSync(setting)
-  bootLog('Sync inited.')
-
-  // syncSetting()
 
   isInited ||= true
 

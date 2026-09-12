@@ -1,8 +1,6 @@
 import { Navigation } from 'react-native-navigation'
 import {
-  VERSION_MODAL,
   PACT_MODAL,
-  SYNC_MODE_MODAL,
 } from './screenNames'
 import themeState from '@/store/theme/state'
 
@@ -64,103 +62,7 @@ export const showPactModal = () => {
   })
 }
 
-export const showVersionModal = () => {
-  const theme = themeState.theme
-
-  void Navigation.showOverlay({
-    component: {
-      name: VERSION_MODAL,
-      options: {
-        layout: {
-          componentBackgroundColor: 'transparent',
-        },
-        overlay: {
-          interceptTouchOutside: true,
-        },
-        statusBar: {
-          drawBehind: true,
-          visible: true,
-          style: getStatusBarStyle(theme.isDark),
-          backgroundColor: 'transparent',
-        },
-        navigationBar: {
-          // visible: false,
-          backgroundColor: theme['c-content-background'],
-        },
-        // animations: {
-
-        //   showModal: {
-        //     enter: {
-        //       enabled: true,
-        //       alpha: {
-        //         from: 0,
-        //         to: 1,
-        //         duration: 300,
-        //       },
-        //     },
-        //     exit: {
-        //       enabled: true,
-        //       alpha: {
-        //         from: 1,
-        //         to: 0,
-        //         duration: 300,
-        //       },
-        //     },
-        //   },
-        // },
-      },
-    },
-  })
-}
-
-export const showSyncModeModal = () => {
-  const theme = themeState.theme
-
-  void Navigation.showOverlay({
-    component: {
-      name: SYNC_MODE_MODAL,
-      options: {
-        layout: {
-          componentBackgroundColor: 'transparent',
-        },
-        overlay: {
-          interceptTouchOutside: true,
-        },
-        statusBar: {
-          drawBehind: true,
-          visible: true,
-          style: getStatusBarStyle(theme.isDark),
-          backgroundColor: 'transparent',
-        },
-        navigationBar: {
-          // visible: false,
-          backgroundColor: theme['c-content-background'],
-        },
-        // animations: {
-
-        //   showModal: {
-        //     enter: {
-        //       enabled: true,
-        //       alpha: {
-        //         from: 0,
-        //         to: 1,
-        //         duration: 300,
-        //       },
-        //     },
-        //     exit: {
-        //       enabled: true,
-        //       alpha: {
-        //         from: 1,
-        //         to: 0,
-        //         duration: 300,
-        //       },
-        //     },
-        //   },
-        // },
-      },
-    },
-  })
-}
+// showVersionModal / showSyncModeModal 已随版本更新与同步子系统一起删除。
 
 // export const showToast = (text) => {
 //   Navigation.showOverlay({

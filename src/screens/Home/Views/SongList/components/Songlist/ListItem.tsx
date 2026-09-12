@@ -27,6 +27,9 @@ export default memo(({ item, index, width, showSource, onPress }: {
           <View style={{ ...styles.listItem, width: itemWidth }}>
             <View style={{ ...styles.listItemImg, backgroundColor: theme['c-content-background'] }}>
               <TouchableOpacity activeOpacity={0.5} onPress={handlePress}>
+                {/* 封面由服务端 `getListCover` 提供（它用歌单第一首歌的封面算出来）。
+                    这里曾加过一个占位图标，起因是我误判「服务端不提供封面」；
+                    封面正常后占位已移除。空歌单（getListCover 返回 null）会是空框。 */}
                 <Image url={item.img} nativeID={`${NAV_SHEAR_NATIVE_IDS.songlistDetail_pic}_from_${item.id}`} style={{ width: itemWidth, height: itemWidth, borderRadius: 4 }} />
                 { showSource ? <Text style={styles.sourceLabel} size={9} color="#fff" >{item.source}</Text> : null }
               </TouchableOpacity>

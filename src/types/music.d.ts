@@ -1,5 +1,13 @@
 declare namespace LX {
   namespace Music {
+    /**
+     * any-listen 服务端返回的原始曲目对象。
+     *
+     * 用 `import(...)` 内联引用而不是把服务端类型塞进本文件：两者是不同模型，
+     * 混在一起会让「该信哪个字段」变得含糊。
+     */
+    type AnyListenRawMusicInfo = import('@/utils/anylisten/types').AnyListenMusicInfo
+
     interface MusicQualityType { // {"type": "128k", size: "3.56M"}
       type: LX.Quality
       size: string | null
@@ -82,7 +90,44 @@ declare namespace LX {
       meta: MusicInfoMeta_mg
     }
 
-    type MusicInfoOnline = MusicInfo_online_common | MusicInfo_kg | MusicInfo_tx | MusicInfo_mg
+    /**
+     * 服务端曲目在 lx 模型里的投影。
+     *
+     * 除了质量字段，这里**额外保存了一份服务端原始对象** `anylisten`。
+     *
+     * 为什么必须保存：服务端的 `getMusicUrl` / `getMusicPic` / `getMusicLyric`
+     * 内部走的是 `findMusic()`，它对 `isLocal` / `meta.filePath` 等字段有依赖。
+     * 实测（tools/ws-probe-musicinfo.mjs、tools/ws-probe-pic-lyric.mjs）表明，
+     * 传一个「只有 id/name/singer」的精简对象时服务端**照样返回 200**，但结果是错的：
+     *
+     * | 接口 | 完整对象 | 精简对象 |
+     * |---|---|---|
+     * | getMusicUrl | 真实 mp3 地址 | `./gdstudio-no-url`（播不出声） |
+     * | getMusicPic | 本地封面 | 网易云的封面（错误的图） |
+     * | getMusicLyric | 真实歌词 | `[00:00.00]暂无歌词` |
+     *
+     * 三种失败都不报错，只表现为「没声音 / 封面不对 / 没歌词」，
+     * 所以这里保留原始对象作为唯一可靠依据，而不是从 lx 字段反推。
+     */
+    interface MusicInfoMeta_anylisten extends MusicInfoMeta_online {
+      source: 'anylisten'
+      /** 服务端返回的原始曲目对象，用于回传给 getMusicUrl / getMusicPic / getMusicLyric */
+      anylisten?: AnyListenRawMusicInfo
+      /** 服务端标记的本地文件（isLocal），findMusic 依赖它选择取址分支 */
+      anylistenIsLocal?: boolean
+      /** 服务端侧的文件路径，本地曲目取址时需要 */
+      anylistenFilePath?: string
+    }
+    interface MusicInfo_anylisten extends MusicInfoBase<'anylisten'> {
+      meta: MusicInfoMeta_anylisten
+    }
+
+    type MusicInfoOnline =
+      | MusicInfo_online_common
+      | MusicInfo_kg
+      | MusicInfo_tx
+      | MusicInfo_mg
+      | MusicInfo_anylisten
     type MusicInfo = MusicInfoOnline | MusicInfoLocal
 
     interface LyricInfo {
