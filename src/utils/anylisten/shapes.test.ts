@@ -71,7 +71,14 @@ test('getAllUserLists 的返回是四个字段的对象，用户歌单在 userLi
  * 所以这里直接检查调用点，把它钉死。
  */
 test('songList.ts 不再以 .list 读取 getListMusics 的结果', () => {
-  const source = readFileSync(SRC + 'utils/musicSdk/anylisten/songList.ts', 'utf8')
+  // ⚠️ 统一换行符再分析。
+  //
+  // 这个用例靠 `\n\n`（空行）把调用点所在的代码块切出来。而 Windows 上
+  // `core.autocrlf=true` 会把检出写成 CRLF，此时 `\n\n` **找不到**（空行是
+  // `\r\n\r\n`），于是「代码块」变成整个文件，撞到注释里那句「按 result.list 读」
+  // 而误报失败 —— CI 是 Linux/LF 所以一直没暴露。与源码内容无关，纯属用例
+  // 对换行符敏感，因此在这里归一化，而不是去要求所有人的 git 配置。
+  const source = readFileSync(SRC + 'utils/musicSdk/anylisten/songList.ts', 'utf8').replace(/\r\n/g, '\n')
 
   // 找 getListMusics 的调用点及其后两行，确认没有 .list 读取
   const callIdx = source.indexOf('await getListMusics(')
@@ -80,7 +87,8 @@ test('songList.ts 不再以 .list 读取 getListMusics 的结果', () => {
   // 取出调用点之后的代码块（到下一个空行为止），检查里面有没有 `.list`
   const after = source.slice(callIdx)
   const blockEnd = after.indexOf('\n\n')
-  const block = blockEnd >= 0 ? after.slice(0, blockEnd) : after
+  assert.ok(blockEnd >= 0, '找不到调用点后面的空行，本用例的切块方式已失效')
+  const block = after.slice(0, blockEnd)
   assert.ok(
     !/\.list\b/.test(block.replace(/\/\/.*$/gm, '')),
     `getListMusics 的返回值是裸数组，读取 .list 会静默得到 undefined：\n${block}`,
