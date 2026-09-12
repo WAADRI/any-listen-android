@@ -100,7 +100,9 @@ def getNpmPackageJson() {
 def npmPackageJson = getNpmPackageJson()
 def verCode = npmPackageJson["versionCode"]
 def verName = npmPackageJson["version"]
-def applicationName = npmPackageJson["name"]
+// 产物文件名用本 fork 的名字，而不是 package.json 里的 npm 包名（那是上游的
+// lx-music-mobile）—— 否则 Release 里挂着一个叫 lx-music-mobile-*.apk 的文件。
+def applicationName = 'any-listen-android'
 
 // 是否具备发布密钥。必须在 android { } 这一层声明：
 // Groovy 里 def 写在 signingConfigs { } 闭包内只是那个闭包的局部变量，
