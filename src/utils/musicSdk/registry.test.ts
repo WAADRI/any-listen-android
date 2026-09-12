@@ -42,6 +42,7 @@ import { fileURLToPath } from 'node:url'
 const SRC = fileURLToPath(new URL('../../', import.meta.url))
 const REGISTRY = join(SRC, 'utils/musicSdk/index.js')
 const ADAPTER = join(SRC, 'utils/musicSdk/anylisten/index.ts')
+const SONGLIST = join(SRC, 'utils/musicSdk/anylisten/songList.ts')
 
 /** 递归收集 src 下的源码文件。 */
 function collectSourceFiles(dir: string): string[] {
@@ -148,19 +149,41 @@ test('适配器导出界面直接调用所需的方法', () => {
   const source = readFileSync(ADAPTER, 'utf8')
   const exported = exportedNames(source)
 
-  // 这些是 core/ 与 store/ 直接用的
-  for (const name of ['musicSearch', 'songList', 'init', 'supportQualitys'] as const) {
+  // 这些是 core/ 与 store/ 直接用的。
+  // `tipSearch` 是搜索框的输入联想：`Search/TipList.tsx` 写的是
+  // `musicSdk[source].tipSearch.search(...)`，**没有**防御。缺了它，
+  // 用户每敲一个字符（200ms 防抖后）就抛一次
+  // `TypeError: Cannot read property 'search' of undefined`。
+  for (const name of ['musicSearch', 'tipSearch', 'songList', 'init', 'supportQualitys'] as const) {
     assert.ok(exported.has(name), `适配器没有导出 ${name}`)
   }
-  // 默认导出必须带上玩家与歌单入口
+  // 默认导出必须带上玩家、歌单与联想入口
   const defaultBlock = /\bexport default\s*\{([\s\S]*?)\n\}/.exec(source)
   assert.ok(defaultBlock, '找不到适配器的 export default 块')
-  for (const name of ['getMusicUrl', 'getPic', 'getLyric', 'musicSearch', 'songList', 'init'] as const) {
+  for (const name of ['getMusicUrl', 'getPic', 'getLyric', 'musicSearch', 'tipSearch', 'songList', 'init'] as const) {
     assert.ok(
       new RegExp(`\\b${name}\\b`).test(defaultBlock[1]),
       `适配器的默认导出缺少 ${name}`,
     )
   }
+})
+
+/**
+ * 歌单搜索。
+ *
+ * `core/search/songlist.ts` 写的是 `musicSdk[source]?.songList.search(...)` ——
+ * `?.` 只保住 `musicSdk[source]`，保不住 `.search`。缺了它，「歌单」标签页
+ * 一搜就抛 `TypeError: undefined is not a function`，而且
+ * `store/search/songlist/state.ts` 用 `?.songList?.search` 判断源是否支持
+ * 歌单搜索，缺了它连源列表都是空的。
+ */
+test('歌单适配器导出并默认导出 search', () => {
+  const source = readFileSync(SONGLIST, 'utf8')
+  assert.ok(exportedNames(source).has('search'), '歌单适配器没有导出 search')
+
+  const defaultBlock = /\bexport default\s*\{([\s\S]*?)\n\}/.exec(source)
+  assert.ok(defaultBlock, '找不到歌单适配器的 export default 块')
+  assert.ok(/\bsearch\b/.test(defaultBlock[1]), '歌单适配器的默认导出缺少 search')
 })
 
 test('注册表里 sources 的每个 id 都在注册表上挂了同名实现', () => {

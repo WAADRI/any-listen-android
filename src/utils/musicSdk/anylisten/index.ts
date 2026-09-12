@@ -28,7 +28,7 @@
 // 所以一律用 ../../anylisten/ 前缀。
 import { getMusicUrl, getMusicPic, getMusicLyric, ensureConnected } from '../../anylisten/api'
 import { resolveServerUrl } from '../../anylisten/serverUrl'
-import { ensureLoaded, searchLibrary, getLibraryState } from '../../anylisten/library'
+import { ensureLoaded, searchLibrary, tipSearchLibrary, getLibraryState } from '../../anylisten/library'
 import { serverMusicInfoOf } from '../../anylisten/convert'
 import type { AnyListenMusicInfo } from '../../anylisten/types'
 // 必须在这里 import 一次并作为值导出。
@@ -186,8 +186,15 @@ export function fetchLyric(oldMusicInfo: any) {
  * 搜索。
  *
  * any-listen 没有服务端搜索接口，只有「列歌单 / 列歌单内歌曲」，
- * 因此在**本机**对已拉取的曲库做匹配（见 `library.ts`）。
+ * 因此在**本机**对已拉取的曲库做匹配（见 `library.ts` / `rank.ts`）。
  * 第一次搜索会触发一次全量拉取。
+ *
+ * ⚠️ 返回值**必须**带上 `source`（`rank.ts` 的 `searchTracks` 负责）：
+ * `store/search/music/action.ts` 的 `setList()` 会用它取
+ * `state.listInfos[datas.source]`。缺了它，单源搜索一按回车就抛
+ * `TypeError: Cannot read property 'list' of undefined`（被 `.catch` 吞掉，
+ * 界面只表现为「搜索出错」），而「聚合大会」那条分支恰好不读 `source`，
+ * 于是看起来只有「我的音乐库」坏了。
  */
 export const musicSearch = {
   search: async(text: string, page = 1, limit = 30) => {
@@ -198,6 +205,32 @@ export const musicSearch = {
       throw new Error(getLibraryState().error ?? '曲库加载失败')
     }
     return searchLibrary(text, page, limit)
+  },
+}
+
+/**
+ * 输入联想（搜索框下面的候选词）。
+ *
+ * ## 为什么必须提供
+ *
+ * `screens/Home/Views/Search/TipList.tsx` 写的是
+ * `musicSdk[source].tipSearch.search(keyword)` —— **没有**对 `tipSearch` 做防御。
+ * 上游每个商业源都有它，本适配器不提供时，`musicSdk['anylisten'].tipSearch`
+ * 是 `undefined`，于是**每输入一个字符**（200ms 防抖后）就抛一次
+ * `TypeError: Cannot read property 'search' of undefined`。
+ *
+ * 数据同样来自本机曲库：返回的候选词可以直接再搜一遍（见 `buildTips`）。
+ * 曲库没加载好时返回空数组，绝不能抛错 —— 联想失败不该打扰用户。
+ */
+export const tipSearch = {
+  search: async(text: string): Promise<string[]> => {
+    try {
+      await ensureLoaded()
+    } catch {
+      return []
+    }
+    if (getLibraryState().status !== 'ready') return []
+    return tipSearchLibrary(text, 10)
   },
 }
 
@@ -247,6 +280,7 @@ export function getMusicDetailPageUrl(): string {
 export default {
   init,
   musicSearch,
+  tipSearch,
   songList,
   getMusicUrl: fetchMusicUrl,
   getPic: fetchPic,
