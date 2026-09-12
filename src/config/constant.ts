@@ -51,10 +51,6 @@ export const storageDataPrefix = {
   musicOtherSource: '@music_other_source__',
   playInfo: '@play_info',
 
-  syncAuthKey: '@sync_auth_key',
-  syncHost: '@sync_host',
-  syncHostHistory: '@sync_host_history',
-
   openStoragePath: '@open_storage_path',
   selectedManagedFolder: '@selected_managed_folder',
   notificationTipEnable: '@notification_tip_enable',
@@ -62,9 +58,6 @@ export const storageDataPrefix = {
 
   searchHistoryList: '@search_history_list',
   listUpdateInfo: '@list_update_info',
-  ignoreVersion: '@ignore_version',
-  ignoreVersionFailTipTimeKey: '@ignore_version_fail_tip_time',
-  leaderboardSetting: '@leaderboard_setting',
   songListSetting: '@songist_setting',
   searchSetting: '@search_setting',
 
@@ -130,14 +123,9 @@ export const MUSIC_TOGGLE_MODE_LIST = [
 ] as const
 
 export const DEFAULT_SETTING = {
-  // leaderboard 与 songList 对应的服务端能力（排行榜、在线歌单广场）any-listen 不提供，
-  // 本 fork 也不会展示这两个界面。这里仍然把源改成 anylisten，
-  // 只是为了「读回来的旧设置里还是 'kw'」这种情况能落到一个有效值上。
-  leaderboard: {
-    source: 'anylisten' as LX.OnlineSource,
-    boardId: '',
-  },
-
+  // songList 对应的服务端能力（在线歌单广场）any-listen 不提供，
+  // 这里把源写成 anylisten 只是为了让「读回来的旧设置里还是 'kw'」能落到有效值上。
+  // 排行榜（leaderboard）配置已随排行榜界面一起删除。
   songList: {
     source: 'anylisten' as LX.OnlineSource,
     sortId: 'new',

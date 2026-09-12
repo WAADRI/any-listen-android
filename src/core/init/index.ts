@@ -5,7 +5,6 @@ import initI18n from './i18n'
 import initUserApi from './userApi'
 import initPlayer from './player'
 import dataInit from './dataInit'
-import initSync from './sync'
 import initCommonState from './common'
 import initAnyListen from './anylisten'
 import { initDeeplink } from './deeplink'
@@ -13,7 +12,6 @@ import { setApiSource } from '@/core/apiSource'
 import { log } from '@/utils/log'
 import commonActions from '@/store/common/action'
 import settingState from '@/store/setting/state'
-import { checkUpdate } from '@/core/version'
 import { bootLog } from '@/utils/bootLog'
 import { cheatTip } from '@/utils/tools'
 
@@ -23,7 +21,6 @@ const handlePushedHomeScreen = async() => {
   if (settingState.setting['common.isAgreePact']) {
     if (isFirstPush) {
       isFirstPush = false
-      void checkUpdate()
       void initDeeplink()
     }
   } else {
@@ -72,11 +69,6 @@ export default async() => {
   bootLog('Data inited.')
   await initCommonState(setting)
   bootLog('Common State inited.')
-
-  void initSync(setting)
-  bootLog('Sync inited.')
-
-  // syncSetting()
 
   isInited ||= true
 

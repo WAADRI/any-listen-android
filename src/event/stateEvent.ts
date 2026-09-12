@@ -2,7 +2,6 @@ import Event from './Event'
 import type { InitState as CommonState } from '@/store/common/state'
 import type { InitState as ListState } from '@/store/list/state'
 import type { InitState as PlayerState } from '@/store/player/state'
-import type { InitState as VersionState } from '@/store/version/state'
 import { type I18n } from '@/lang'
 
 
@@ -94,21 +93,7 @@ export class StateEvent extends Event {
     this.emit('fetchingListStatusUpdated', fetchingListStatus)
   }
 
-  syncStatusUpdated(status: LX.Sync.Status) {
-    this.emit('syncStatusUpdated', status)
-  }
-
-  versionInfoUpdated(info: VersionState['versionInfo']) {
-    this.emit('versionInfoUpdated', info)
-  }
-
-  versionInfoIgnoreVersionUpdated(version: VersionState['ignoreVersion']) {
-    this.emit('versionInfoIgnoreVersionUpdated', version)
-  }
-
-  versionDownloadProgressUpdated(progress: VersionState['progress']) {
-    this.emit('versionDownloadProgressUpdated', progress)
-  }
+  // syncStatusUpdated / versionInfo* 四个事件已随同步与版本更新子系统一起删除。
 
   componentIdsUpdated(ids: CommonState['componentIds']) {
     this.emit('componentIdsUpdated', ids)

@@ -14,16 +14,10 @@ const userListKey = storageDataPrefix.userList
 const viewPrevStateKey = storageDataPrefix.viewPrevState
 const listScrollPositionKey = storageDataPrefix.listScrollPosition
 const listUpdateInfoKey = storageDataPrefix.listUpdateInfo
-const ignoreVersionKey = storageDataPrefix.ignoreVersion
-const ignoreVersionFailTipTimeKey = storageDataPrefix.ignoreVersionFailTipTimeKey
 const searchSettingKey = storageDataPrefix.searchSetting
 const searchHistoryListKey = storageDataPrefix.searchHistoryList
 const songListSettingKey = storageDataPrefix.songListSetting
-const leaderboardSettingKey = storageDataPrefix.leaderboardSetting
 const listPrevSelectIdKey = storageDataPrefix.listPrevSelectId
-const syncAuthKeyPrefix = storageDataPrefix.syncAuthKey
-const syncHostPrefix = storageDataPrefix.syncHost
-const syncHostHistoryPrefix = storageDataPrefix.syncHostHistory
 const listPrefix = storageDataPrefix.list
 const dislikeListPrefix = storageDataPrefix.dislikeList
 const userApiPrefix = storageDataPrefix.userApi
@@ -39,7 +33,6 @@ let listUpdateInfo: LX.List.ListUpdateInfo
 
 let searchSetting: typeof DEFAULT_SETTING['search']
 let songListSetting: typeof DEFAULT_SETTING['songList']
-let leaderboardSetting: typeof DEFAULT_SETTING['leaderboard']
 let searchHistoryList: string[]
 
 const saveListPositionThrottle = throttle(() => {
@@ -53,9 +46,6 @@ const saveSearchHistoryThrottle = throttle(() => {
 }, 1000)
 const saveSongListSettingThrottle = throttle(() => {
   void saveData(songListSettingKey, songListSetting)
-}, 1000)
-const saveLeaderboardSettingThrottle = throttle(() => {
-  void saveData(leaderboardSettingKey, leaderboardSetting)
 }, 1000)
 const saveViewPrevStateThrottle = throttle((state) => {
   void saveData(viewPrevStateKey, state)
@@ -165,38 +155,6 @@ export const overwriteListUpdateInfo = async(ids: string[]) => {
   saveListUpdateInfoThrottle()
 }
 
-let ignoreVersion: string | null
-export const saveIgnoreVersion = (version: string | null) => {
-  ignoreVersion = version
-  if (version == null) {
-    void removeData(ignoreVersionKey)
-  } else {
-    void saveData(ignoreVersionKey, version)
-  }
-}
-// 获取忽略更新的版本号
-export const getIgnoreVersion = async() => {
-  // eslint-disable-next-line require-atomic-updates
-  if (ignoreVersion === undefined) ignoreVersion = (await getData<string | null>(ignoreVersionKey)) ?? null
-  return ignoreVersion
-}
-
-let ignoreVersionFailTipTime: number | null
-export const saveIgnoreVersionFailTipTime = (time: number | null) => {
-  ignoreVersionFailTipTime = time
-  if (time == null) {
-    void removeData(ignoreVersionFailTipTimeKey)
-  } else {
-    void saveData(ignoreVersionFailTipTimeKey, time)
-  }
-}
-// 获取忽略更新的版本号
-export const getIgnoreVersionFailTipTime = async() => {
-  // eslint-disable-next-line require-atomic-updates
-  if (ignoreVersionFailTipTime === undefined) ignoreVersionFailTipTime = (await getData<number | null>(ignoreVersionFailTipTimeKey))
-  return ignoreVersionFailTipTime ?? 0
-}
-
 let openStoragePath: string | null = ''
 export const saveOpenStoragePath = async(path: string) => {
   if (path) {
@@ -254,17 +212,6 @@ export const saveSongListSetting = async(setting: Partial<typeof DEFAULT_SETTING
   if (!songListSetting) await getSongListSetting()
   songListSetting = Object.assign(songListSetting, setting)
   saveSongListSettingThrottle()
-}
-
-export const getLeaderboardSetting = async() => {
-  // eslint-disable-next-line require-atomic-updates
-  leaderboardSetting ??= await getData(leaderboardSettingKey) ?? { ...DEFAULT_SETTING.leaderboard }
-  return { ...leaderboardSetting }
-}
-export const saveLeaderboardSetting = async(setting: Partial<typeof DEFAULT_SETTING['leaderboard']>) => {
-  if (!leaderboardSetting) await getLeaderboardSetting()
-  leaderboardSetting = Object.assign(leaderboardSetting, setting)
-  saveLeaderboardSettingThrottle()
 }
 
 export const getViewPrevState = async() => {
@@ -448,58 +395,6 @@ export const getSelectedManagedFolder = async() => {
   let uri = await getData<string>(selectedManagedFolderPrefix)
   if (selectedManagedFolder != uri) selectedManagedFolder = uri
   return selectedManagedFolder
-}
-
-export const getSyncAuthKey = async(serverId: string) => {
-  const keys = await getData<Record<string, LX.Sync.KeyInfo>>(syncAuthKeyPrefix)
-  if (!keys) return null
-  return keys[serverId] ?? null
-}
-export const setSyncAuthKey = async(serverId: string, info: LX.Sync.KeyInfo) => {
-  let keys = await getData<Record<string, LX.Sync.KeyInfo>>(syncAuthKeyPrefix) ?? {}
-  keys[serverId] = info
-  await saveData(syncAuthKeyPrefix, keys)
-}
-
-let syncHostInfo: string
-export const getSyncHost = async() => {
-  if (syncHostInfo === undefined) {
-    // eslint-disable-next-line require-atomic-updates
-    syncHostInfo = await getData(syncHostPrefix) ?? ''
-
-    // 清空1.0.0之前版本的同步主机
-    if (typeof syncHostInfo == 'object') syncHostInfo = ''
-  }
-  return syncHostInfo
-}
-export const setSyncHost = async(host: string) => {
-  // let hostInfo = await getData(syncHostPrefix) || {}
-  // hostInfo.host = host
-  // hostInfo.port = port
-  syncHostInfo = host
-  await saveData(syncHostPrefix, syncHostInfo)
-}
-let syncHostHistory: string[]
-export const getSyncHostHistory = async() => {
-  if (syncHostHistory === undefined) {
-    // eslint-disable-next-line require-atomic-updates
-    syncHostHistory = await getData(syncHostHistoryPrefix) ?? []
-
-    // 清空1.0.0之前版本的同步历史
-    if (syncHostHistory.length && typeof syncHostHistory[0] !== 'string') syncHostHistory = []
-  }
-  return syncHostHistory
-}
-export const addSyncHostHistory = async(host: string) => {
-  let syncHostHistory = await getSyncHostHistory()
-  if (syncHostHistory.some(h => h == host)) return
-  syncHostHistory.unshift(host)
-  if (syncHostHistory.length > 20) syncHostHistory = syncHostHistory.slice(0, 20) // 最多存储20个
-  await saveData(syncHostHistoryPrefix, syncHostHistory)
-}
-export const removeSyncHostHistory = async(index: number) => {
-  syncHostHistory.splice(index, 1)
-  await saveData(syncHostHistoryPrefix, syncHostHistory)
 }
 
 let userApis: LX.UserApi.UserApiInfo[] = []

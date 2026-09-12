@@ -321,11 +321,6 @@ declare global {
       'desktopLyric.style.lyricShadowColor': string
 
       /**
-       * 是否显示热门搜索
-       */
-      'search.isShowHotSearch': boolean
-
-      /**
        * 是否显示搜索历史
        */
       'search.isShowHistorySearch': boolean
@@ -364,11 +359,6 @@ declare global {
        * 文件命名方式
        */
       'download.fileName': '歌名 - 歌手' | '歌手 - 歌名' | '歌名'
-
-      /**
-       * 是否启用同步
-       */
-      'sync.enable': boolean
     }
   }
 }

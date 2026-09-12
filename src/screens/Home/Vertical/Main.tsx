@@ -3,7 +3,6 @@ import { View } from 'react-native'
 import Search from '../Views/Search'
 import SongList from '../Views/SongList'
 import Mylist from '../Views/Mylist'
-import Leaderboard from '../Views/Leaderboard'
 import Setting from '../Views/Setting'
 import commonState, { type InitState as CommonState } from '@/store/common/state'
 import { createStyle } from '@/utils/tools'
@@ -88,41 +87,6 @@ const SongListPage = () => {
   return visible ? component : null
   // return activeId == 1 || activeId == 0  ? SongList : null
 }
-const LeaderboardPage = () => {
-  const [visible, setVisible] = useState(commonState.navActiveId == 'nav_top')
-  const component = useMemo(() => <Leaderboard />, [])
-  useEffect(() => {
-    let currentId: CommonState['navActiveId'] = commonState.navActiveId
-    const handleNavIdUpdate = (id: CommonState['navActiveId']) => {
-      currentId = id
-      if (id == 'nav_top') {
-        requestAnimationFrame(() => {
-          setVisible(true)
-        })
-      }
-    }
-    const handleHide = () => {
-      if (currentId != 'nav_setting') return
-      setVisible(false)
-    }
-    const handleConfigUpdated = (keys: Array<keyof LX.AppSetting>) => {
-      if (keys.some(k => hideKeys.includes(k))) handleHide()
-    }
-    global.state_event.on('navActiveIdUpdated', handleNavIdUpdate)
-    global.state_event.on('themeUpdated', handleHide)
-    global.state_event.on('languageChanged', handleHide)
-    global.state_event.on('configUpdated', handleConfigUpdated)
-
-    return () => {
-      global.state_event.off('navActiveIdUpdated', handleNavIdUpdate)
-      global.state_event.off('themeUpdated', handleHide)
-      global.state_event.off('languageChanged', handleHide)
-      global.state_event.on('configUpdated', handleConfigUpdated)
-    }
-  }, [])
-
-  return visible ? component : null
-}
 const MylistPage = () => {
   const [visible, setVisible] = useState(commonState.navActiveId == 'nav_love')
   const component = useMemo(() => <Mylist />, [])
@@ -181,21 +145,30 @@ const SettingPage = () => {
 const viewMap = {
   nav_search: 0,
   nav_songlist: 1,
-  nav_top: 2,
-  nav_love: 3,
-  nav_setting: 4,
+  nav_love: 2,
+  nav_setting: 3,
 }
 const indexMap = [
   'nav_search',
   'nav_songlist',
-  'nav_top',
   'nav_love',
   'nav_setting',
 ] as const
 
+/**
+ * 取页码。
+ *
+ * 用查表而不是直接下标：`commonState.navActiveId` 是**持久化**的
+ * （`DEFAULT_SETTING.viewPrevState.id`），老版本装过之后可能存着已删除的
+ * `'nav_top'`。那时 `viewMap[id]` 是 `undefined`，会让 PagerView 的
+ * `initialPage` 与 `setPageWithoutAnimation` 收到 `undefined`。
+ */
+const pageIndexOf = (id: CommonState['navActiveId']): number =>
+  (viewMap as Record<string, number | undefined>)[id] ?? 0
+
 const Main = () => {
   const pagerViewRef = useRef<ComponentRef<typeof PagerView>>(null)
-  let activeIndexRef = useRef(viewMap[commonState.navActiveId])
+  let activeIndexRef = useRef(pageIndexOf(commonState.navActiveId))
   // const isScrollingRef = useRef(false)
   // const scrollPositionRef = useRef(-1)
 
@@ -217,7 +190,7 @@ const Main = () => {
   const onPageSelected = useCallback(({ nativeEvent }: PagerViewOnPageSelectedEvent) => {
     // console.log(nativeEvent)
     activeIndexRef.current = nativeEvent.position
-    if (activeIndexRef.current != viewMap[commonState.navActiveId]) {
+    if (activeIndexRef.current != pageIndexOf(commonState.navActiveId)) {
       setNavActiveId(indexMap[activeIndexRef.current])
     }
   }, [])
@@ -245,7 +218,7 @@ const Main = () => {
 
   useEffect(() => {
     const handleUpdate = (id: CommonState['navActiveId']) => {
-      const index = viewMap[id]
+      const index = pageIndexOf(id)
       if (activeIndexRef.current == index) return
       activeIndexRef.current = index
       pagerViewRef.current?.setPageWithoutAnimation(index)
@@ -280,30 +253,12 @@ const Main = () => {
       <View collapsable={false} key="nav_songlist" style={styles.pageStyle}>
         <SongListPage />
       </View>
-      <View collapsable={false} key="nav_top" style={styles.pageStyle}>
-        <LeaderboardPage />
-      </View>
       <View collapsable={false} key="nav_love" style={styles.pageStyle}>
         <MylistPage />
       </View>
       <View collapsable={false} key="nav_setting" style={styles.pageStyle}>
         <SettingPage />
       </View>
-      {/* <View collapsable={false} key="nav_search" style={styles.pageStyle}>
-        <Search />
-      </View>
-      <View collapsable={false} key="nav_songlist" style={styles.pageStyle}>
-        <SongList />
-      </View>
-      <View collapsable={false} key="nav_top" style={styles.pageStyle}>
-        <Leaderboard />
-      </View>
-      <View collapsable={false} key="nav_love" style={styles.pageStyle}>
-        <Mylist />
-      </View>
-      <View collapsable={false} key="nav_setting" style={styles.pageStyle}>
-        <Setting />
-      </View> */}
     </PagerView>
   ), [onPageScrollStateChanged, onPageSelected])
 

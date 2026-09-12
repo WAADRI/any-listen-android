@@ -58,7 +58,6 @@ const defaultSetting: LX.AppSetting = {
   'desktopLyric.style.lyricPlayedColor': 'rgba(7, 197, 86, 1)',
   'desktopLyric.style.lyricShadowColor': 'rgba(0, 0, 0, 0.6)',
 
-  'search.isShowHotSearch': false,
   'search.isShowHistorySearch': false,
 
   'list.isClickPlayList': false,
@@ -69,8 +68,6 @@ const defaultSetting: LX.AppSetting = {
   'list.addMusicLocationType': 'top',
 
   'download.fileName': '歌名 - 歌手',
-
-  'sync.enable': false,
 
   // any-listen 服务器。本 fork 唯一的曲库来源。
   // 地址形如 https://music.example.com（可带反代子路径，不要以斜杠结尾）。

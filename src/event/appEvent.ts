@@ -188,10 +188,7 @@ export class AppEvent extends Event {
 
   // 歌单分类标签相关事件（showSonglistTagList / hideSonglistTagList /
   // songlistTagInfoChange）已随标签筛选按钮一起删除：any-listen 没有歌单分类。
-
-  selectSyncMode(mode: LX.Sync.ModeType) {
-    this.emit('selectSyncMode', mode)
-  }
+  // selectSyncMode 已随同步子系统一起删除。
 }
 
 
