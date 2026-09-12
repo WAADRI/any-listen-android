@@ -25,6 +25,10 @@ public class LyricPlayer {
   List<HashMap> lines = new ArrayList<>();
   HashMap tags = new HashMap();
   boolean isPlay = false;
+  /** 是否播放过：`performanceTime` 只在 `play()` 里设置，没播过时它是 0，取到的「当前位置」是垃圾值 */
+  boolean hasPlayed = false;
+  /** 暂停那一刻的位置：内部时钟靠墙钟推进，暂停时必须把它冻住（见 getCurrentTimeMs） */
+  int pausedTime = 0;
   float playbackRate = 1;
   int curLineNum = 0;
   int maxLine = 0;
@@ -255,6 +259,9 @@ public class LyricPlayer {
 
   public void pause() {
     if (!isPlay) return;
+    // 先把当前位置记下来：内部时钟是「墙钟 + 锚点」，不冻住的话暂停后它还在往前走，
+    // 逐字扫光就会在暂停期间继续把后面的字扫完（真机上就是这个现象）
+    pausedTime = getCurrentTime();
     isPlay = false;
     tempPaused = false;
     stopTimeout();
@@ -270,6 +277,7 @@ public class LyricPlayer {
     if (this.lines.size() == 0) return;
     pause();
     isPlay = true;
+    hasPlayed = true;
 
     Object tagOffset = tags.get("offset");
     if (tagOffset == null) tagOffset = 0;
@@ -362,5 +370,25 @@ public class LyricPlayer {
   public void onPlay(int lineNum) {}
 
   public void onSetLyric(List lines) {}
+
+  /**
+   * 当前播放位置（毫秒）。逐字扫光每帧都要问一次，所以直接暴露出来。
+   *
+   * **暂停时必须返回停表那一刻的位置**：内部时钟是 `(墙钟 - 锚点) * 倍速 + 起点`，
+   * 暂停并不会让它停下，直接返回它就会让扫光在暂停期间继续前进。
+   */
+  public int getCurrentTimeMs() {
+    if (!hasPlayed) return 0;
+    return isPlay ? getCurrentTime() : pausedTime;
+  }
+
+  /** 是否播放过（没播过时内部时钟没有有效锚点） */
+  public boolean hasPlayed() {
+    return hasPlayed;
+  }
+
+  public boolean isPlaying() {
+    return isPlay;
+  }
 
 }

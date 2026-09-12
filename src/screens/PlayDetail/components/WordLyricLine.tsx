@@ -130,7 +130,7 @@ const WordLyricLine = memo(({ line, size, lineHeight, textAlign, playedColor, un
       clipWidth.stopAnimation()
       const segment = index >= 0 ? segments[index] : null
       const remaining = segment ? segment.startMs + segment.durationMs - elapsed : 0
-      if (segment && segment.durationMs > 0 && remaining > 0) {
+      if (segment && segment.durationMs > 0 && remaining > 0 && wordLyricClock.isPlay) {
         // 还在这段的时长里：线性扫到该段末尾（时长按倍速换算）
         Animated.timing(clipWidth, {
           toValue: ends[index] ?? 0,
@@ -139,7 +139,8 @@ const WordLyricLine = memo(({ line, size, lineHeight, textAlign, playedColor, un
           useNativeDriver: false,
         }).start()
       } else {
-        // 还没开始 / 落在空隙里 / 这一段已经唱完：直接摆到该在的位置
+        // 还没开始 / 落在空隙里 / 这一段已经唱完 —— 以及**暂停**：
+        // 暂停时必须直接摆到当前位置，不能把这一段动画跑完，否则暂停后字还会被扫完
         clipWidth.setValue(sweepXAt(segments, ends, elapsed))
       }
 
