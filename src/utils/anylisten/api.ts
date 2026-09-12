@@ -168,3 +168,28 @@ export function getMusicPic(musicInfo: AnyListenMusicInfo): Promise<AnyListenMus
 export function getMusicLyric(musicInfo: AnyListenMusicInfo): Promise<AnyListenMusicLyricResult> {
   return getSession().call<AnyListenMusicLyricResult>('getMusicLyric', { musicInfo })
 }
+
+/**
+ * 丢弃当前会话并用**最新凭据**重新连上。
+ *
+ * ## 为什么必须有这个函数
+ *
+ * 用户保存新的服务器地址 / 密码后，只调 `resetSession()` 是**不够**的：
+ * 它只关掉 socket，没有任何东西会重建连接。而播放门禁
+ * `global.lx.apiInitPromise[0]` 仍然是上个会话落定时的 `true` ——
+ * 于是应用看起来「已就绪」，实际上连接已经死了。
+ *
+ * 表现就是：保存配置后进歌单页是空的，**手动点一下排序才显示**
+ * （那一下触发了新的请求，而 `getSession()` 会顺手建连接）。
+ * 根因在 `handleSave` 里只 reset 没有重连。
+ *
+ * 这里放在文件末尾，是因为它依赖 `waitForConnected` 与 `isConfigured`。
+ *
+ * @returns 连上后 resolve；连不上或未配置则 reject（调用方据此关闭门禁）
+ */
+export function restartSession(timeoutMs = 20_000): Promise<void> {
+  resetSession()
+  // 未配置服务器时不发起连接：那只会产生一串无意义的失败重连
+  if (!isConfigured()) return Promise.reject(new Error('尚未配置 any-listen 服务器地址'))
+  return waitForConnected(timeoutMs).then(() => undefined)
+}

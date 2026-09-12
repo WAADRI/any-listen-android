@@ -51,6 +51,7 @@ import { useTheme } from '@/store/theme/hook'
 import { updateSetting } from '@/core/common'
 import { useSettingValue } from '@/store/setting/hook'
 import { handshake, normalizeServerUrl } from '@/utils/anylisten/client'
+import { restartAnyListen } from '@/core/init/anylisten'
 import {
   getAllUserLists,
   getListMusics,
@@ -277,11 +278,18 @@ const ServerSetting = memo(() => {
       'anylisten.serverUrl': normalized,
       'anylisten.password': pwd,
     })
-    // 配置变了就丢弃旧会话，否则会继续用旧地址（表现为「改了地址还在读旧服务器」）
-    resetSession()
     urlRef.current = normalized
     setUrl(normalized)
-    toast('已保存')
+
+    // 只 resetSession() 是不够的：它只关掉旧 socket，**没有东西会重建连接**，
+    // 而播放门禁仍是上个会话的 true。表现就是保存后进歌单页是空的，
+    // 手动点一下排序才显示。所以这里必须真的重连。
+    void restartAnyListen().then(() => {
+      toast('已保存并重新连接')
+    }).catch((err: unknown) => {
+      // 重连失败要让用户看见，而不是留着「看起来已保存但什么都没有」的状态
+      toast(`已保存，但连接失败：${err instanceof Error ? err.message : String(err)}`, 'long')
+    })
   }, [current])
 
   // 主题里没有 `c-error` 这个键（只有 buildActiveThemeColors 列出的那些），

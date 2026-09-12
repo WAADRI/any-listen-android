@@ -18,7 +18,7 @@
  * 「source init failed」这种与真实原因无关的提示。
  */
 import settingState from '@/store/setting/state'
-import { setupAnyListen, waitForConnected, isConfigured } from '@/utils/anylisten/api'
+import { setupAnyListen, waitForConnected, restartSession, isConfigured } from '@/utils/anylisten/api'
 import { setupConvert } from '@/utils/anylisten/convert'
 import { setupSource } from '@/utils/musicSdk/anylisten'
 import { normalizeServerUrl, type ConnState } from '@/utils/anylisten/client'
@@ -85,6 +85,29 @@ export default function initAnyListen(options?: {
       // 这里必须记：门禁没打开的话所有播放都会失败，而失败提示是
       // 「source init failed」这种与真实原因无关的文本。
       log.error(`[anylisten] 连接失败，播放不可用：${err instanceof Error ? err.message : String(err)}`)
+      throw err
+    },
+  )
+}
+
+/**
+ * 用户改了服务器地址 / 密码后调用。
+ *
+ * ## 为什么不能只调 `resetSession()`
+ *
+ * 只关掉旧 socket 的话，**没有任何东西会重建连接**，而播放门禁仍是
+ * 上个会话落定时的 `true`。表现就是：保存配置后进歌单页是空的，
+ * 手动点一下排序才显示（那一下触发新请求，`getSession()` 顺手建了连接）。
+ *
+ * 所以这里重新走一遍初始化：关旧会话 → 按新凭据连上 → 重新落定门禁。
+ * 由设置页在保存后调用，并把失败情况显示给用户。
+ */
+export function restartAnyListen(): Promise<void> {
+  log.info('[anylisten] 配置已更改，重新建立连接')
+  return restartSession().then(
+    () => { log.info('[anylisten] 已重连，播放门禁已重新打开') },
+    (err: unknown) => {
+      log.error(`[anylisten] 重新连接失败：${err instanceof Error ? err.message : String(err)}`)
       throw err
     },
   )
