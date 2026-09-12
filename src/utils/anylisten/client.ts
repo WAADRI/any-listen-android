@@ -176,6 +176,20 @@ export class AnyListenSession {
   private opts: Required<Pick<SessionOptions, 'callTimeoutMs' | 'heartbeatTimeoutMs' | 'reconnectBaseMs'>> &
     SessionOptions
 
+  /**
+   * 本会话所连的服务器地址。
+   *
+   * 之所以要暴露成读取器：多处需要它来把服务端的虚拟地址
+   * （`al-ps-host:/…`）与同源相对路径解析成绝对 URL，例如
+   * `songList.ts` 取歌单封面时。而 `opts` 是私有的，外面读不到 ——
+   * 早先写成 `getSession().serverUrl` 得到的是 `undefined`，
+   * 于是 `resolveServerUrl(cover, undefined)` 对**每一个**封面都返回 `null`，
+   * 表现就是封面全部不显示（而调用点看上去完全正常）。
+   */
+  get serverUrl(): string {
+    return this.opts.serverUrl
+  }
+
   constructor(options: SessionOptions) {
     this.opts = {
       callTimeoutMs: 15_000,

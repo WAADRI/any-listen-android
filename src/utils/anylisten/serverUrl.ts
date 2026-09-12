@@ -20,7 +20,8 @@
 export const VIRTUAL_PROTOCOL = 'al-ps-host:'
 
 /** 把 base 规整成不带末尾斜杠的形式，便于做前缀替换。 */
-const trimTrailingSlash = (base: string): string => base.replace(/\/+$/, '')
+const trimTrailingSlash = (base: unknown): string =>
+  typeof base === 'string' ? base.replace(/\/+$/, '') : ''
 
 /**
  * 把服务端返回的资源地址解析成可直接请求的绝对 URL。

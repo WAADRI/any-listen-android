@@ -13,6 +13,7 @@ import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 
 import { AnyListenSession, handshake, buildSocketUrl, normalizeServerUrl } from './client.ts'
+import { resolveServerUrl } from './serverUrl.ts'
 import { OP, decodeFrame } from './wire.ts'
 
 const SERVER = 'https://music.example.com'
@@ -139,6 +140,27 @@ async function establish(session: AnyListenSession): Promise<FakeWebSocket> {
 
 test.beforeEach(() => {
   FakeWebSocket.created = []
+})
+
+/**
+ * `serverUrl` 必须是会话上的**公开**读取器。
+ *
+ * 缺失时不会报错：调用点 `getSession().serverUrl` 得到 `undefined`，
+ * 而 `resolveServerUrl(url, undefined)` 对每一个虚拟地址
+ * （`al-ps-host:/…`）都返回 `null` —— 表现是**歌单封面全部不显示**，
+ * 而调用点、类型、编译全都正常。这个坑真实发生过。
+ */
+test('会话公开 serverUrl（用于解析虚拟/相对资源地址）', () => {
+  const { session } = makeSession()
+  assert.equal(session.serverUrl, SERVER)
+  // 解析虚拟地址必须依赖它，否则永远拿不到可用 URL
+  assert.equal(
+    resolveServerUrl('al-ps-host:/api/p_static/x.jpeg', session.serverUrl),
+    `${SERVER}/api/p_static/x.jpeg`,
+  )
+  // 若 serverUrl 取不到（undefined），解析会静默失败 —— 这正是当初的表现
+  assert.equal(resolveServerUrl('al-ps-host:/api/p_static/x.jpeg', undefined as unknown as string), null)
+  session.close()
 })
 
 // ---------------------------------------------------------------- 握手
