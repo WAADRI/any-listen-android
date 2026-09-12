@@ -35,7 +35,7 @@
  * `sourcePage < Math.ceil(result.total / result.limit)` 会误判还有下一页，
  * 导致反复请求同一个完整歌单。
  */
-import { getAllUserLists, getListMusics, getSession } from '../../anylisten/api'
+import { getAllUserLists, getListCover, getListMusics, getSession } from '../../anylisten/api'
 import { convertToSearchItem } from '../../anylisten/convert'
 import { resolveServerUrl } from '../../anylisten/serverUrl'
 import type { AnyListenMusicInfo, AnyListenUserList, AnyListenMyAllList } from '../../anylisten/types'
@@ -65,9 +65,6 @@ export const sortList = [
  */
 const detailCache = new Map<string, AnyListenMusicInfo[]>()
 
-/** 测试或切换服务器后需要丢弃缓存。 */
-export const clearSongListCache = () => { detailCache.clear() }
-
 /**
  * 取服务端曲目列表，带缓存。
  *
@@ -94,25 +91,25 @@ async function loadTracks(listId: string, force = false): Promise<AnyListenMusic
 /**
  * 把服务端歌单转成界面的列表项。
  *
- * 字段以**实测**为准（`meta` 的真实键是
+ * `meta` 的真实键是
  * `deviceId / path / includeSubDir / lazzyParseMeta / createTime / updateTime /
- * desc / playCount / posTime / enabledRemove / songCount`）：
+ * desc / playCount / posTime / enabledRemove / songCount`：
  *
- * - **没有 `img`**：any-listen 的歌单不存封面，服务端不提供。界面会显示占位图。
  * - **没有 `author`**：没有创建者概念。留空字符串，不要编造。
  * - **没有 `time`**：没有创建时间字符串。界面用 `total` 显示歌曲数代替。
+ * - **没有封面**：封面由 `getListCover(listId)` 单独取（见 `fetchCover`），
+ *   以参数传入本函数。
  *
  * 这些字段是「有则有、无则空」，所以不能用 `?? ''` 之外的默认值去填，
  * 那样会显示假信息。
  */
-function toListItem(list: AnyListenUserList, serverUrl: string): ListInfoItem {
-  const cover = resolveServerUrl(list.meta?.picUrl, serverUrl) ?? ''
-  // 实测 meta 里没有 picUrl；只有极少数形态才有。有就解析，没有就留空。
+function toListItem(list: AnyListenUserList, coverUrl: string): ListInfoItem {
+  // 封面**不在** list.meta 里，必须由 getListCover 取（见下面的 fetchCovers）。
   return {
     id: list.id,
     name: list.name || '未命名歌单',
     author: list.meta?.path ?? '',
-    img: cover,
+    img: coverUrl,
     desc: list.meta?.desc ?? '',
     time: typeof list.meta?.createTime === 'number'
       ? new Date(list.meta.createTime).toLocaleDateString()
@@ -121,6 +118,39 @@ function toListItem(list: AnyListenUserList, serverUrl: string): ListInfoItem {
     total: typeof list.meta?.songCount === 'number' ? String(list.meta.songCount) : undefined,
     source: 'anylisten',
   }
+}
+
+/**
+ * 歌单封面的缓存与并发去重。
+ *
+ * 两个必要性：
+ *
+ * 1. **封面是逐歌单一次 RPC**（服务端 `getListCover` 内部还要读该歌单第一首歌
+ *    再取图），翻页/重建界面时不该重复请求；
+ * 2. 同一个歌单在并发请求里要复用**同一个 promise**，否则 27 个歌单会发两轮。
+ *
+ * 之前我以为服务端不提供歌单封面 —— 那是错的：`list.meta` 里确实没有
+ * pic/img/cover 字段，但服务端有专门的 `getListCover`，它用「歌单第一首歌的
+ * 封面」算出来。只查 meta 的键就下结论，导致这里一直是空占位。
+ */
+const coverCache = new Map<string, Promise<string>>()
+
+function fetchCover(listId: string, serverUrl: string): Promise<string> {
+  const key = `${serverUrl}\u0000${listId}`
+  const hit = coverCache.get(key)
+  if (hit) return hit
+
+  const task = getListCover(listId)
+    .then((cover) => resolveServerUrl(cover, serverUrl) ?? '')
+    .catch(() => '')
+  coverCache.set(key, task)
+  return task
+}
+
+/** 切换服务器后必须丢弃封面缓存，否则会把旧服务器的封面当成新的。 */
+export const clearSongListCache = () => {
+  detailCache.clear()
+  coverCache.clear()
 }
 
 /**
@@ -170,19 +200,26 @@ export const getTags = async(): Promise<{
  * `total` / `limit` / `maxPage` 三者必须自洽：
  * `core/songlist.ts` 用 `Math.ceil(total / limit)` 判断是否还有下一页，
  * 填错会导致无限加载或提前截断。
+ *
+ * 封面需要**逐歌单一次 RPC**，所以只为当前这一页的歌单取（其余页不浪费请求），
+ * 并且并行发起 —— 串行的话 27 个歌单会让首屏明显变慢。
  */
 export const getList = async(sortId: string, tagId: string, page: number): Promise<ListInfo> => {
   const result = await getAllUserLists()
   const serverUrl = getSession().serverUrl ?? ''
-  const all = expandLists(result).map((list) => toListItem(list, serverUrl))
+  const lists = expandLists(result)
 
-  const total = all.length
+  const total = lists.length
   const maxPage = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const safePage = Math.min(Math.max(1, page), maxPage)
   const start = (safePage - 1) * PAGE_SIZE
+  const pageLists = lists.slice(start, start + PAGE_SIZE)
+
+  // 并行取这一页的封面；单个失败不影响整个列表（fetchCover 内部已兜成空串）
+  const covers = await Promise.all(pageLists.map((list) => fetchCover(list.id, serverUrl)))
 
   return {
-    list: all.slice(start, start + PAGE_SIZE),
+    list: pageLists.map((list, i) => toListItem(list, covers[i])),
     total,
     page: safePage,
     limit: PAGE_SIZE,

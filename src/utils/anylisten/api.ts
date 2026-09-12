@@ -147,6 +147,22 @@ export function getListMusics(listId: string): Promise<AnyListenMusicList> {
   return getSession().call<AnyListenMusicList>('getListMusics', listId)
 }
 
+/**
+ * 取歌单封面。
+ *
+ * ⚠️ 封面**不在** `list.meta` 里 —— 那里没有任何 pic/img/cover 字段。
+ * 服务端是用「该歌单第一首歌的封面」算出来的
+ * （`shared/app/modules/musicList/index.ts` 的 `getListsCover` →
+ * `dbService.getListsFirstMusics` → `getMusicPic`），并带缓存。
+ * 所以必须走这个 RPC，不能指望从歌单对象上读到。
+ *
+ * 返回虚拟地址（`al-ps-host:…`）或 null（歌单为空时），
+ * 调用方需用 `resolveServerUrl` 解析。
+ */
+export function getListCover(listId: string): Promise<string | null | undefined> {
+  return getSession().call<string | null | undefined>('getListCover', listId)
+}
+
 /** 歌单写操作。action 与 data 的形状见 docs/anylisten-api.md。 */
 export function listAction(action: string, data: unknown): Promise<void> {
   return getSession().call<void>('listAction', { action, data })
