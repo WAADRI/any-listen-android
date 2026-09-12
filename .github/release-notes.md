@@ -14,7 +14,7 @@
 >
 > 从本版本之后，升级可以直接覆盖安装，数据保留。
 
-`anylisten-android-v<版本>-universal.apk` 一个包通吃所有架构，直接安装即可。
+`any-listen-android-v<版本>-universal.apk` 一个包通吃所有架构，直接安装即可。
 
 ## 首次配置
 
