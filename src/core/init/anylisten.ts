@@ -22,6 +22,7 @@ import { setupAnyListen, waitForConnected, restartSession, isConfigured } from '
 import { setupConvert } from '@/utils/anylisten/convert'
 import { setupSource } from '@/utils/musicSdk/anylisten'
 import { normalizeServerUrl, type ConnState } from '@/utils/anylisten/client'
+import { settleApiGate } from '@/core/apiSource'
 import { log } from '@/utils/log'
 
 /** 读当前配置。任何异常都退化成「未配置」，避免初始化整体失败。 */
@@ -96,16 +97,30 @@ export default function initAnyListen(options?: {
  * ## 为什么不能只调 `resetSession()`
  *
  * 只关掉旧 socket 的话，**没有任何东西会重建连接**，而播放门禁仍是
- * 上个会话落定时的 `true`。表现就是：保存配置后进歌单页是空的，
+ * 上个会话落定时的值。表现就是：保存配置后进歌单页是空的，
  * 手动点一下排序才显示（那一下触发新请求，`getSession()` 顺手建了连接）。
  *
- * 所以这里重新走一遍初始化：关旧会话 → 按新凭据连上 → 重新落定门禁。
- * 由设置页在保存后调用，并把失败情况显示给用户。
+ * ## 为什么重连成功后还要重新落定门禁
+ *
+ * 门禁曾经只在启动时落定一次。如果启动时**没有配置服务器**（用户清空了数据
+ * 就是这种情况），它会停在 `false`，之后即使重连成功也**再也不会变回 true** ——
+ * 表现为「连接正常、歌单能加载、歌词能取到，但每首歌都报 `source init failed`」。
+ * 这个组合非常有迷惑性，因为它看起来完全不像连接问题。
+ *
+ * 所以这里在连上之后必须重新装填门禁。失败时同样要落定，避免播放永远挂在
+ * 「等待初始化」上。
  */
 export function restartAnyListen(): Promise<void> {
   log.info('[anylisten] 配置已更改，重新建立连接')
-  return restartSession().then(
-    () => { log.info('[anylisten] 已重连，播放门禁已重新打开') },
+  // 把门禁**先挂到这次的连接尝试上**，再开始连。
+  // 不能用启动时那个 promise：它在「启动时未配置」的情况下已经失败，
+  // 拿它落定会让门禁永远是关闭的（就是 source init failed 的成因）。
+  const attempt = restartSession()
+  settleApiGate(attempt)
+  return attempt.then(
+    () => {
+      log.info('[anylisten] 已重连，播放门禁已重新打开')
+    },
     (err: unknown) => {
       log.error(`[anylisten] 重新连接失败：${err instanceof Error ? err.message : String(err)}`)
       throw err

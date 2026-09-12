@@ -141,8 +141,17 @@ function fetchCover(listId: string, serverUrl: string): Promise<string> {
   if (hit) return hit
 
   const task = getListCover(listId)
-    .then((cover) => resolveServerUrl(cover, serverUrl) ?? '')
-    .catch(() => '')
+    .then((cover) => {
+      const resolved = resolveServerUrl(cover, serverUrl) ?? ''
+      // 诊断：歌单封面这条链路也曾经"看起来实现了却什么都没有"，
+      // 所以把「拿到什么、解析成什么」打出来，避免再一次靠猜。
+      console.log(`[anylisten] 歌单封面 ${listId}：${cover === null ? '服务端返回 null（空歌单）' : cover} → ${resolved || '（解析失败）'}`)
+      return resolved
+    })
+    .catch((err: unknown) => {
+      console.log(`[anylisten] 歌单封面 ${listId} 失败：${err instanceof Error ? err.message : String(err)}`)
+      return ''
+    })
   coverCache.set(key, task)
   return task
 }
@@ -260,6 +269,9 @@ export const getListDetail = async(id: string, page: number): Promise<ListDetail
   const safePage = Math.min(Math.max(1, page), maxPage)
   const start = (safePage - 1) * PAGE_SIZE
 
+  // 详情页头部的封面也走 getListCover（与列表格同一份缓存，不会重复请求）
+  const cover = await fetchCover(id, serverUrl)
+
   return {
     list: converted.slice(start, start + PAGE_SIZE),
     source: 'anylisten',
@@ -271,6 +283,7 @@ export const getListDetail = async(id: string, page: number): Promise<ListDetail
     id,
     info: {
       name: `歌单（${total} 首）`,
+      img: cover,
       desc: '',
       author: '',
     },
