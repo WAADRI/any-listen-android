@@ -5,20 +5,21 @@
  * 而 `api.ts` 会把设置 store 与 React Native 拖进来，Node 下跑不了。
  * 这里只依赖类型与 `convert.ts`（同样是纯的）。
  *
- * ## 为什么必须去重（真机实测）
+ * ## 为什么只索引本地文件（真机实测）
  *
  * 服务端的曲库是**用户自己整理的**，同一首歌可能同时以多种形态存在：
- * 一个本地文件（`isLocal: true`，id 是文件路径）加上若干条在线引用
- * （`isLocal: false`，id 是 QQ 音乐 / 网易云的 songmid）。
+ * 一个本地文件（`isLocal: true`，id 是文件路径、有 `meta.filePath`）加上若干条
+ * 在线引用（`isLocal: false`，id 是 QQ 音乐 / 网易云的 songmid，没有 `filePath`）。
  *
- * 用 `tools/ws-probe-library.mjs` 对真实服务器拉过一遍：1670 首里有 5 组
- * 同名同歌手的重复，共 8 条多余记录，全部是「本地文件 + 在线引用」的形态。
- * 表现就是搜索时同一首歌出现 2~3 次，而其中点不响的那些（服务端对在线曲目
- * 返回 `./gdstudio-no-url` 占位地址）会弹「该曲目可能已从曲库移除」。
+ * 用 `tools/ws-probe-library.mjs` 对真实服务器拉过一遍：1670 首里有 **16 首是在线
+ * 引用**，其中 8 首与本地文件重名（5 组），另外 8 首只存在在线形态。
  *
- * 所以规则是：**同一组里优先保留本地文件**。本地文件取址不依赖服务端去
- * 商业平台现拉，必定可播；而在线引用能不能取到要看服务端当时的状态
- * （实测同一首歌的在线引用有时能返回真实地址、有时是占位值）。
+ * 在线引用**能不能播取决于服务端当下的状态**：实测同一首歌的在线引用有时返回
+ * 真实地址、有时返回 `./gdstudio-no-url` 占位值，后者点了就报
+ * 「该曲目可能已从曲库移除」。所以这里直接**只索引本地文件** —— 本地文件取址
+ * 不依赖服务端去商业平台现拉，必定可播；宁可少几首，也不要给出一堆点了报错的条目。
+ *
+ * 过滤之后再做同名去重（`dedupePreferLocal`），处理本地文件之间重名的情况。
  */
 import { convertToSearchItem } from './convert'
 import type { AnyListenMusicInfo } from './types'
@@ -27,6 +28,17 @@ const norm = (s: unknown): string => (typeof s === 'string' ? s.toLowerCase().tr
 
 /** 去掉空格与常见标点，用于「把歌词当搜索词」这类输入。 */
 const collapse = (s: string): string => s.replace(/[\s'",，。.、·\-_()（）\[\]【】!！?？~～]/g, '')
+
+/**
+ * 是不是「能播的本地文件」。
+ *
+ * 判定写成「`isLocal` 为真**或**有 `meta.filePath`」，而不是只认 `isLocal`：
+ * 本地曲目必有 `filePath`，而在线引用实测两者皆无 —— 这样即使服务端某些条目
+ * 漏了 `isLocal` 字段，也不会把真正的本地文件丢掉。
+ */
+export function isLocalTrack(track: AnyListenMusicInfo): boolean {
+  return track.isLocal === true || typeof track.meta?.filePath === 'string'
+}
 
 /**
  * 归组用的键：同名 + 同歌手 + 同时长。
@@ -46,26 +58,26 @@ function songKey(track: AnyListenMusicInfo): string {
 /**
  * 同一首歌只留一条，**优先本地文件**。分两步：
  *
- * 1. **本地文件优先**：只要某首歌有本地文件，就丢掉它同名的所有**在线引用**
- *    （不再比较时长）。真机数据里正是这一条消掉了全部 8 条多余记录：
+ * 1. **本地文件优先**：只要某首歌有本地文件，就丢掉它同名的**在线引用**
+ *    （不再比较时长）。真机数据里正是这一条消掉了 5 组重复里的 8 条多余记录：
  *    `可能 - 程响` 与 `COPDD - 宋雨琦…` 的在线引用时长与本地文件**不一致**，
- *    只比时长的规则会把它们留成第二行 —— 而界面上那两行的歌名歌手完全一样，
- *    用户只会看到「同一首歌出现两次」，其中一条还点不响。
- * 2. 再按「同名 + 同歌手 + 同时长」归组：这一步针对**没有**本地文件的情况
- *    （同一首歌在多个平台各有一条在线引用），以及本地文件之间恰好重名的情况。
+ *    只比时长的规则会把它们留成第二行，而界面上那两行的歌名歌手完全一样。
  *
- * 保持首次出现的顺序；组内没有本地文件时保留第一条（无从判断优劣，
- * 至少不要丢掉这首歌）。
+ *    ⚠️ 索引现在已在 `selectPlayableTracks` 里过滤掉全部在线引用，所以这一步
+ *    在正常路径上是**防御性**的（本函数是纯函数，不假设调用方一定先过滤过）。
+ * 2. 再按「同名 + 同歌手 + 同时长」归组：处理本地文件之间恰好重名的情况。
+ *
+ * 保持首次出现的顺序；组内没有本地文件时保留第一条。
  */
 export function dedupePreferLocal(tracks: AnyListenMusicInfo[]): AnyListenMusicInfo[] {
   const hasLocal = new Set<string>()
   for (const track of tracks) {
-    if (track.isLocal === true) hasLocal.add(songKey(track))
+    if (isLocalTrack(track)) hasLocal.add(songKey(track))
   }
 
   // 第一步：丢掉「本地文件已覆盖」的在线引用
   const candidates = tracks.filter(track =>
-    track.isLocal === true || !hasLocal.has(songKey(track)),
+    isLocalTrack(track) || !hasLocal.has(songKey(track)),
   )
 
   // 第二步：按同名 + 同歌手 + 同时长归组
@@ -86,9 +98,14 @@ export function dedupePreferLocal(tracks: AnyListenMusicInfo[]): AnyListenMusicI
   const out: AnyListenMusicInfo[] = []
   for (const key of order) {
     const group = groups.get(key)!
-    out.push(group.length === 1 ? group[0] : (group.find(t => t.isLocal === true) ?? group[0]))
+    out.push(group.length === 1 ? group[0] : (group.find(t => isLocalTrack(t)) ?? group[0]))
   }
   return out
+}
+
+/** 曲库索引：**只保留本地文件**，再做同名去重。 */
+export function selectPlayableTracks(tracks: AnyListenMusicInfo[]): AnyListenMusicInfo[] {
+  return dedupePreferLocal(tracks.filter(isLocalTrack))
 }
 
 /**

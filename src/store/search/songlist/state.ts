@@ -1,4 +1,4 @@
-﻿import music from '@/utils/musicSdk'
+import music from '@/utils/musicSdk'
 
 
 // import { deduplicationList } from '@common/utils/renderer'
@@ -56,6 +56,6 @@ for (const source of music.sources) {
   }
   maxPages[source.id as LX.OnlineSource] = 0
 }
-state.sources.push('all')
+// 同 `store/search/music/state.ts`：不再提供「聚合大会」（`'all'`）。
 
 export default state

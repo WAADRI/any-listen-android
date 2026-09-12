@@ -12,7 +12,7 @@
  * 不落盘是有意的：曲库会变，落盘就要处理失效，而重新拉取的成本很低。
  */
 import { getAllUserLists, getListMusics } from './api'
-import { buildTips, dedupePreferLocal, searchTracks, type LibrarySearchResult } from './rank'
+import { buildTips, searchTracks, selectPlayableTracks, type LibrarySearchResult } from './rank'
 import type { AnyListenMusicInfo } from './types'
 
 export type LibraryStatus = 'idle' | 'loading' | 'ready' | 'error'
@@ -99,7 +99,8 @@ export async function ensureLoaded(force = false): Promise<void> {
         }
       }
 
-      state.tracks = dedupePreferLocal(tracks)
+      // 只留本地文件（在线引用可能取不到播放地址），并做同名去重。见 `rank.ts`。
+      state.tracks = selectPlayableTracks(tracks)
       state.loadedAt = Date.now()
       state.status = 'ready'
       if (failures.length) {

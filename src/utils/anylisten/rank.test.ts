@@ -9,11 +9,14 @@
  *    而「聚合大会」那条分支恰好不读 `source`，所以表现为「换个 tab 就好了」。
  *    真机日志里就是这一类错误，但被 `MusicList` 的 `.catch` 吞掉了。
  *
- * 2. **同名歌曲优先保留本地文件**：真机实测（`tools/ws-probe-library.mjs`）
- *    1670 首里有 5 组同名同歌手的重复，全部是「本地文件 + 在线引用」形态；
- *    在线引用取址可能拿到 `./gdstudio-no-url` 占位值，点了就报
- *    「该曲目可能已从曲库移除」。把真实曲库喂给本模块验证过：
- *    1670 → 1662（正好去掉那 8 条），且之后**没有任何**同名同歌手的行。
+ * 2. **只索引本地文件**：真机实测（`tools/ws-probe-library.mjs`）1670 首里有
+ *    16 首是**在线引用**（`isLocal: false`、没有 `filePath`），其中 8 首与本地文件
+ *    重名。在线引用能不能播取决于服务端当下的状态（有时返回真实地址、有时返回
+ *    `./gdstudio-no-url` 占位值 → 点了报「该曲目可能已从曲库移除」），所以整个
+ *    索引只保留本地文件。把真实曲库喂给本模块验证过：1670 → 1654（去掉那 16 首）。
+ *
+ * 3. **同名去重**：同一首歌的本地副本与在线引用只留本地那条，且去重后
+ *    **没有任何**同名同歌手的行。
  *
  * 3. **联想项必须是可直接再次搜索的词**：联想项被点击后直接作为搜索词，
  *    返回「歌名 - 歌手」这种组合会搜不到东西。
@@ -21,19 +24,21 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { buildTips, dedupePreferLocal, searchTracks } from './rank'
+import { buildTips, dedupePreferLocal, isLocalTrack, searchTracks, selectPlayableTracks } from './rank'
 import type { AnyListenMusicInfo } from './types'
 
-/** 造一首服务端曲目。默认是本地文件（id 就是文件路径）。 */
+/** 造一首服务端曲目。默认是本地文件（id 就是文件路径，且有 filePath）。 */
 function track(name: string, singer: string, extra: Partial<AnyListenMusicInfo> = {}): AnyListenMusicInfo {
   const id = extra.id ?? `/music/${singer} - ${name}.mp3`
+  const isLocal = extra.isLocal ?? true
   return {
     id,
     name,
     singer,
     interval: '04:00',
-    isLocal: true,
-    meta: { musicId: id, albumName: '' },
+    isLocal,
+    // 真实数据里本地文件一定有 filePath，在线引用一定没有
+    meta: { musicId: id, albumName: '', ...(isLocal ? { filePath: id } : {}) },
     ...extra,
   }
 }
@@ -78,6 +83,41 @@ test('分页与总数字段自洽', () => {
   assert.equal(first.list.length, 3)
   assert.equal(third.list.length, 1)
   assert.equal(third.source, 'anylisten')
+})
+
+test('只索引本地文件：在线引用一律不进曲库索引', () => {
+  const tracks = [
+    track('恋人', '李荣浩'),
+    // 真机里的真实形态：同一首歌的腾讯 / 网易引用
+    track('恋人', '李荣浩', { id: '001auUcH4WQs2V', isLocal: false }),
+    // 只有在线形态、没有本地文件的歌，同样不索引（点了大概率报「占位值」）
+    track('星火照途', '某人', { id: '002pdnAG153maG', isLocal: false }),
+  ]
+  const kept = selectPlayableTracks(tracks)
+
+  assert.deepEqual(kept.map(t => t.id), ['/music/李荣浩 - 恋人.mp3'])
+  assert.ok(kept.every(t => t.isLocal === true))
+})
+
+test('漏了 isLocal 字段但有 filePath 的本地文件不能被丢掉', () => {
+  const noFlag = track('某歌', '某人')
+  delete (noFlag as { isLocal?: boolean }).isLocal
+
+  assert.equal(isLocalTrack(noFlag), true)
+  assert.equal(selectPlayableTracks([noFlag]).length, 1)
+})
+
+test('既没有 isLocal 也没有 filePath 的条目会被丢掉', () => {
+  const online = {
+    id: '555',
+    name: '只有在线引用',
+    singer: '某人',
+    interval: null,
+    meta: { musicId: '555' },
+  } as AnyListenMusicInfo
+
+  assert.equal(isLocalTrack(online), false)
+  assert.equal(selectPlayableTracks([online]).length, 0)
 })
 
 test('同一首歌的本地与在线引用只留一条，且留本地', () => {

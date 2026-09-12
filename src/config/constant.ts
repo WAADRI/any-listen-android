@@ -135,7 +135,9 @@ export const DEFAULT_SETTING = {
 
   search: {
     temp_source: 'anylisten' as LX.OnlineSource,
-    source: 'all' as LX.OnlineSource | 'all',
+    // 只有一个音源，不存在「聚合搜索」。旧版本存过 'all'，
+    // `Search/index.tsx` 会在读取设置时校验并回退到第一个可用源。
+    source: 'anylisten' as LX.OnlineSource | 'all',
     type: 'music' as 'music' | 'songlist',
   },
 

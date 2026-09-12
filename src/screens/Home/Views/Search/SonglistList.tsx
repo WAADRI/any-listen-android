@@ -16,7 +16,7 @@ export interface MusicListType {
 
 export default forwardRef<MusicListType, {}>((props, ref) => {
   const listRef = useRef<SonglistType>(null)
-  const searchInfoRef = useRef<{ text: string, source: Source }>({ text: '', source: 'kw' })
+  const searchInfoRef = useRef<{ text: string, source: Source }>({ text: '', source: 'anylisten' })
   const isUnmountedRef = useRef(false)
   useImperativeHandle(ref, () => ({
     async loadList(text, source) {

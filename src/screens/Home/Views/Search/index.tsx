@@ -27,25 +27,36 @@ export default () => {
   const searchTipListRef = useRef<TipListType>(null)
   const listRef = useRef<ListType>(null)
   const layoutHeightRef = useRef<number>(0)
-  const searchInfo = useRef<SearchInfo>({ temp_source: 'kw', source: 'kw', searchType: 'music' })
+  const searchInfo = useRef<SearchInfo>({ temp_source: 'anylisten', source: 'anylisten', searchType: 'music' })
   const timeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
     void getSearchSetting().then(info => {
+      /**
+       * 设置是**持久化**的，可能存着已经不存在的源。
+       *
+       * 最典型的是 `'all'`（聚合大会）：本 fork 只有 anylisten 一个源，
+       * 那个入口已从源列表里删掉，但老版本存的 `source: 'all'` 还在。
+       * 不校验的话，源选择器会显示一个不在下拉列表里的源，点开也只有一项。
+       */
+      const sources = info.type == 'songlist' ? searchSonglistState.sources : searchMusicState.sources
+      const fallback = (sources[0] ?? 'anylisten') as SearchInfo['source']
+      const source = sources.includes(info.source) ? info.source : fallback
+
       // info.type = 'music'
-      searchInfo.current.temp_source = info.temp_source
-      searchInfo.current.source = info.source
+      searchInfo.current.temp_source = sources.includes(info.temp_source) ? info.temp_source : fallback
+      searchInfo.current.source = source
       searchInfo.current.searchType = info.type
       switch (info.type) {
         case 'music':
-          headerBarRef.current?.setSourceList(searchMusicState.sources, info.source)
+          headerBarRef.current?.setSourceList(searchMusicState.sources, source)
           break
         case 'songlist':
-          headerBarRef.current?.setSourceList(searchSonglistState.sources, info.source)
+          headerBarRef.current?.setSourceList(searchSonglistState.sources, source)
           break
       }
       headerBarRef.current?.setText(searchState.searchText)
-      listRef.current?.loadList(searchState.searchText, searchInfo.current.source, searchInfo.current.searchType)
+      listRef.current?.loadList(searchState.searchText, source, searchInfo.current.searchType)
     })
 
     const handleTypeChange = (type: SearchType) => {
