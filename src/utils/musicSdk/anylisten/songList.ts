@@ -81,8 +81,12 @@ async function loadTracks(listId: string, force = false): Promise<AnyListenMusic
     const hit = detailCache.get(cacheKey)
     if (hit) return hit
   }
+  // `getListMusics` 返回的是**裸数组**（见 types.ts 的 `AnyListenMusicList`），
+  // 不是 `{ list: [...] }` 信封。这里曾经写成 `result?.list` —— 在数组上读
+  // 不存在的属性不会报错、只会得到 undefined，于是歌单详情永远是空的。
+  // 这类错误类型系统也拦不住：数组上本来就可以做属性访问。
   const result = await getListMusics(listId)
-  const tracks = Array.isArray(result?.list) ? result.list : []
+  const tracks = Array.isArray(result) ? result : []
   detailCache.set(cacheKey, tracks)
   return tracks
 }

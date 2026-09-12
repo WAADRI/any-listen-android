@@ -45,12 +45,43 @@ export default () => {
   const songlistInfo = useRef<SonglistInfo>(resolveSonglistInfo({}))
 
   useEffect(() => {
-    void getSongListSetting().then(info => {
+    let cancelled = false
+
+    /**
+     * 首次加载。
+     *
+     * 加一次自动重试：曾经出现过「进歌单页是空的，点一下排序（默认）才显示」
+     * 的现象 —— 也就是同样的参数**第二次**能成功。那说明首次调用可能发生在
+     * 某个协作对象尚未就绪的时刻（ref 链、连接、列表布局），而不是参数有问题。
+     *
+     * 与其去猜具体是哪一个，这里在「首屏拿到空列表」时自动重试一次：
+     * 代价是空歌单会多一次请求，收益是用户不必再手动点一下。
+     * 若重试仍为空，那就确实是没有内容，不再纠缠。
+     */
+    const load = async(attempt: number): Promise<void> => {
+      const info = await getSongListSetting()
+      if (cancelled) return
       const resolved = resolveSonglistInfo(info)
       songlistInfo.current = resolved
       headerBarRef.current?.setSource(resolved.source, resolved.sortId, info.tagName, resolved.tagId)
-      listRef.current?.loadList(resolved.source, resolved.sortId, resolved.tagId)
+      await listRef.current?.loadList(resolved.source, resolved.sortId, resolved.tagId)
+      if (cancelled) return
+
+      const loaded = songlistState.listInfo.list.length
+      if (attempt === 0 && loaded === 0) {
+        await new Promise(resolve => setTimeout(resolve, 300))
+        if (cancelled) return
+        await load(1)
+      }
+    }
+
+    void load(0).catch((err: unknown) => {
+      console.log('歌单首屏加载失败:', err)
     })
+
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   const handleSortChange: HeaderBarProps['onSortChange'] = (id) => {
