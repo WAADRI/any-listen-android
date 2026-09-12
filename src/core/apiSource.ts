@@ -1,5 +1,6 @@
 // import { setUserApi as setUserApiAction } from '@renderer/utils/ipc'
 import musicSdk from '@/utils/musicSdk'
+import { toQualityList } from '@/utils/musicSdk/qualityList'
 import { updateSetting } from './common'
 import settingState from '@/store/setting/state'
 import { destroyUserApi, setUserApi } from './userApi'
@@ -102,8 +103,16 @@ export const setApiSource = (apiId: string, initPromise?: Promise<unknown>) => {
       else global.lx.apiInitPromise[2]?.(false)
     })
   } else {
-    // @ts-expect-error 索引签名在 globalData 的类型里是宽松的
-    global.lx.qualityList = musicSdk.supportQuality[apiId] ?? {}
+    /**
+     * ⚠️ **不能**照抄上游的 `musicSdk.supportQuality[apiId] ?? {}`。
+     *
+     * 上游的 `supportQuality` 是 `apiId → 音源表` 的**两层**结构，本 fork 的
+     * 注册表只有**一层**（就是音源表本身），取下标会拿到**音质数组**，
+     * 于是 `global.lx.qualityList['anylisten']` 恒为 `undefined`，
+     * 表现为**整个曲库的曲目全部灰显、点不动**（而播放其实是好的）。
+     * 详见 `utils/musicSdk/qualityList.ts` 与 `qualityList.test.ts`。
+     */
+    global.lx.qualityList = toQualityList(apiId, musicSdk.supportQuality[apiId])
     destroyUserApi()
     rearmApiGate()
   }

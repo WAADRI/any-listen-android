@@ -25,6 +25,13 @@
  * - `musicSdk[sourceId]` → 单个源对象
  * - `musicSdk.sources` → `[{ name, id }]`，被歌单页、热搜页遍历
  * - `musicSdk.supportQuality` → `Partial<Record<OnlineSource, Quality[]>>`
+ *   （**音源 id → 音质数组**，一层）
+ *
+ * ⚠️ `supportQuality` 是**一层**结构，与上游不同：上游是
+ * `apiId → 音源表` 的两层结构，所以上游的 `core/apiSource.ts` 写的是
+ * `global.lx.qualityList = supportQuality[apiId]`。本 fork 照抄那一行会发布
+ * 音质**数组**本身，导致整个曲库灰显 —— 因此这里的一层结构必须搭配
+ * `toQualityList(apiId, supportQuality[apiId])` 使用（见 `qualityList.ts`）。
  *
  * ## 保留 findMusic / searchMusic 的理由
  *
