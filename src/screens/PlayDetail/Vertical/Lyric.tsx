@@ -81,9 +81,9 @@ const LrcLine = memo(({ line, lineNum, activeLine, awlrc, onLayout }: LineProps)
   const kind = lineStyleKind(lineNum, activeLine, !!awlrcLine?.segments.length)
 
   const colors = useMemo(() => {
-    // 唱过的行保持已唱色（桌面版的 `.played` 就是这个语义），只是比当前行暗一档
-    if (kind === 'active') return [theme['c-primary'], theme['c-primary-alpha-200'], 1] as const
-    if (kind === 'sung') return [theme['c-primary'], theme['c-primary-alpha-200'], 0.6] as const
+    // 当前行与唱过的行**同一套颜色**：桌面版就是这样——靠扫光区分唱到哪，而不是靠明暗。
+    // 只有还没唱到的行才是普通灰字。
+    if (kind !== 'idle') return [theme['c-primary'], theme['c-primary-alpha-200'], 1] as const
     return [theme['c-350'], theme['c-300'], 0.6] as const
   }, [kind, theme])
 
