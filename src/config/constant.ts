@@ -137,8 +137,10 @@ export const DEFAULT_SETTING = {
     temp_source: 'anylisten' as LX.OnlineSource,
     // 只有一个音源，不存在「聚合搜索」。旧版本存过 'all'，
     // `Search/index.tsx` 会在读取设置时校验并回退到第一个可用源。
+    //
+    // 上游还有 `type: 'music' | 'songlist'`（「歌曲 / 歌单」标签页），
+    // 歌单搜索已删除，这个字段不再有意义。
     source: 'anylisten' as LX.OnlineSource | 'all',
-    type: 'music' as 'music' | 'songlist',
   },
 
   viewPrevState: {

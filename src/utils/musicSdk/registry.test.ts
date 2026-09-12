@@ -169,21 +169,19 @@ test('适配器导出界面直接调用所需的方法', () => {
 })
 
 /**
- * 歌单搜索。
+ * 反向断言：歌单适配器**不再**导出 `search`。
  *
- * `core/search/songlist.ts` 写的是 `musicSdk[source]?.songList.search(...)` ——
- * `?.` 只保住 `musicSdk[source]`，保不住 `.search`。缺了它，「歌单」标签页
- * 一搜就抛 `TypeError: undefined is not a function`，而且
- * `store/search/songlist/state.ts` 用 `?.songList?.search` 判断源是否支持
- * 歌单搜索，缺了它连源列表都是空的。
+ * 它曾经存在，只为搜索页的「歌单」标签页服务（`core/search/songlist.ts`）。
+ * 那个标签页已整体删除，`core/search/songlist.ts` 与 `store/search/songlist/`
+ * 也不在了。若将来有人把歌单搜索加回来，这条会提醒他确认调用点。
  */
-test('歌单适配器导出并默认导出 search', () => {
+test('歌单适配器不再导出 search（歌单搜索标签页已删除）', () => {
   const source = readFileSync(SONGLIST, 'utf8')
-  assert.ok(exportedNames(source).has('search'), '歌单适配器没有导出 search')
 
-  const defaultBlock = /\bexport default\s*\{([\s\S]*?)\n\}/.exec(source)
-  assert.ok(defaultBlock, '找不到歌单适配器的 export default 块')
-  assert.ok(/\bsearch\b/.test(defaultBlock[1]), '歌单适配器的默认导出缺少 search')
+  assert.ok(
+    !exportedNames(source).has('search'),
+    '歌单适配器又导出了 search：请确认歌单搜索的调用点是否也要恢复，并更新本断言',
+  )
 })
 
 test('注册表里 sources 的每个 id 都在注册表上挂了同名实现', () => {

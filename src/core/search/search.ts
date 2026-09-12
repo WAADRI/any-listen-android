@@ -4,9 +4,6 @@ import { getSearchHistory as getSearchHistoryFromStore, saveSearchHistory } from
 import settingState from '@/store/setting/state'
 
 
-export const setSearchType: typeof searchActions['setSearchType'] = (type) => {
-  searchActions.setSearchType(type)
-}
 export const setSearchText: typeof searchActions['setSearchText'] = (text) => {
   searchActions.setSearchText(text)
 }

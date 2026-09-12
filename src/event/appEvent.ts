@@ -1,8 +1,6 @@
 import { setNavActiveId } from '@/core/common'
 import Event from './Event'
 import commonState from '@/store/common/state'
-import { type Source as SonglistSource } from '@/store/songlist/state'
-import { type SearchType } from '@/store/search/state'
 
 
 // {
@@ -166,9 +164,7 @@ export class AppEvent extends Event {
    * 搜索类型改变事件
    * @param type
    */
-  searchTypeChanged(type: SearchType) {
-    this.emit('searchTypeChanged', type)
-  }
+  // searchTypeChanged 已随「歌曲 / 歌单」切换器一起删除：搜索只剩本机曲库一个对象。
 
   jumpListPosition() {
     if (commonState.navActiveId == 'nav_love') {

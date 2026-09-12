@@ -184,7 +184,6 @@ export const saveSearchSetting = async(setting: Partial<typeof DEFAULT_SETTING['
   if (!searchSetting) await getSearchSetting()
   let requiredSave = false
   if (setting.source && searchSetting.source != setting.source) requiredSave = true
-  if (setting.type && searchSetting.type != setting.type) requiredSave = true
   if (setting.temp_source && searchSetting.temp_source != setting.temp_source) requiredSave = true
 
   if (!requiredSave) return

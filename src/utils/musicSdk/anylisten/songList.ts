@@ -5,16 +5,15 @@
  *
  * lx 的歌单浏览界面（歌单广场 + 歌单详情，含「播放全部」「下载」「批量操作」）
  * 全部通过 lx 的**源层 `songList` 接口**取数据，而 `core/songlist.ts` 只用到其中
- * **三个方法**，搜索页另用第四个：
+ * **三个方法**：
  *
  * | 方法 | 调用点 | 作用 |
  * |---|---|---|
  * | `getTags()` | `core/songlist.ts:31` | 分类标签 |
  * | `getList(sortId, tagId, page)` | `core/songlist.ts:80` | 歌单列表 |
  * | `getListDetail(id, page)` | `core/songlist.ts:109` | 歌单内歌曲 |
- * | `search(text, page, limit)` | `core/search/songlist.ts` | 搜索页的「歌单」标签页 |
  *
- * 因此只要这四个方法按契约返回，**整个歌单界面不需要改一行代码**就能用。
+ * 因此只要这三个方法按契约返回，**整个歌单界面不需要改一行代码**就能用。
  * 这比重写界面可靠得多，也让「播放全部」等现成功能直接可用。
  *
  * ## 与商业音源的语义差异
@@ -338,61 +337,12 @@ export const getListDetail = async(id: string, page: number): Promise<ListDetail
   }
 }
 
-/**
- * 歌单搜索（搜索页的「歌单」标签页）。
- *
- * ## 为什么必须存在
- *
- * `core/search/songlist.ts:30` 写的是 `musicSdk[source]?.songList.search(...)`
- * —— `?.` 只保住了 `musicSdk[source]`，**保不住 `.search`**。本适配器原先没有
- * 这个方法，于是「歌单」标签页一搜就抛 `TypeError: undefined is not a function`；
- * 更糟的是 `store/search/songlist/state.ts:46` 会用
- * `music[source.id]?.songList?.search` 判断「这个源支不支持歌单搜索」，
- * 缺了它连源列表都是空的。
- *
- * ## 语义
- *
- * 商业源的歌单搜索是「在平台的歌单广场里按关键词找歌单」；这里是
- * **在用户自己的歌单里按名字找**（曲库里的歌单就是用户自己的）。
- *
- * 返回形状与商业源一致：`{ list, total, limit, source }` ——
- * `store/search/songlist/action.ts` 的 `setList()` 用 `datas.source` 取列表信息，
- * 少了它会和歌曲搜索一样在 `undefined` 上取属性。
- */
-export const search = async(text: string, page = 1, limit = PAGE_SIZE): Promise<{
-  list: ListInfoItem[]
-  total: number
-  limit: number
-  source: 'anylisten'
-}> => {
-  const all = await getAllUserLists()
-  const serverUrl = getSession().serverUrl ?? ''
-  const lists = expandLists(all)
-  // 顺带记下名字，歌单详情页要靠它显示真实歌单名
-  rememberListNames(lists, serverUrl)
-
-  const q = (text ?? '').trim().toLowerCase()
-  const matched = q
-    ? lists.filter(list => (list.name ?? '').toLowerCase().includes(q))
-    : lists
-
-  const safePage = Math.max(1, page)
-  const start = (safePage - 1) * limit
-  const pageLists = matched.slice(start, start + limit)
-  const covers = await Promise.all(pageLists.map(list => fetchCover(list.id, serverUrl)))
-
-  return {
-    list: pageLists.map((list, i) => toListItem(list, covers[i])),
-    total: matched.length,
-    limit,
-    source: 'anylisten',
-  }
-}
-
 export default {
   sortList,
   getTags,
   getList,
   getListDetail,
-  search,
+  // 曾经为实现搜索页的「歌单」标签页加过 `search(text, page, limit)`。
+  // 那个标签页（`SearchTypeSelector`）已整体删除 —— 它没有对应的服务端能力，
+  // 而且会让界面不停闪烁 —— 所以这里不再提供 `search`。
 }

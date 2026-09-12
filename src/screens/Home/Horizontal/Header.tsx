@@ -10,12 +10,9 @@ import StatusBar from '@/components/common/StatusBar'
 import { useSettingValue } from '@/store/setting/hook'
 import { scaleSizeH } from '@/utils/pixelRatio'
 import { HEADER_HEIGHT as _HEADER_HEIGHT } from '@/config/constant'
-import { type InitState as CommonState } from '@/store/common/state'
-import SearchTypeSelector from '@/screens/Home/Views/Search/SearchTypeSelector'
 
-const headerComponents: Partial<Record<CommonState['navActiveId'], React.ReactNode>> = {
-  nav_search: <SearchTypeSelector />,
-}
+// 上游这里会给 `nav_search` 塞一个「歌曲 / 歌单」切换器（`SearchTypeSelector`）。
+// 歌单搜索已删除（没有对应的服务端能力，而且界面会不停闪烁），因此顶部不再有附加组件。
 
 const HEADER_HEIGHT = _HEADER_HEIGHT * 0.8
 
@@ -40,7 +37,6 @@ const LeftHeader = () => {
       <View style={styles.left}>
         <Text style={styles.leftTitle} size={18}>{t(id)}</Text>
       </View>
-      {headerComponents[id] ?? null}
 
       {/* <TouchableOpacity style={styles.btn} onPress={openSetting}>
         <Icon style={{ ...styles.btnText, color: theme['c-font'] }} name="setting" size={styles.btnText.fontSize} />
@@ -70,7 +66,6 @@ const RightHeader = () => {
       <View style={styles.left}>
         <Text style={styles.rightTitle} size={18}>{t(id)}</Text>
       </View>
-      {headerComponents[id] ?? null}
       {/* <TouchableOpacity style={styles.btn} onPress={openSetting}>
         <Icon style={{ ...styles.btnText, color: theme['c-font'] }} name="setting" size={styles.btnText.fontSize} />
       </TouchableOpacity> */}
