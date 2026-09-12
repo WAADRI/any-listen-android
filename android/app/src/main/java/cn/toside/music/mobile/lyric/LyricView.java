@@ -71,6 +71,9 @@ public class LyricView extends Activity implements View.OnTouchListener {
   private ArrayList<String> currentExtendedLyrics = new ArrayList<>();
   /** 取播放位置用（逐字扫光） */
   private LyricPlayer player = null;
+  /** 当前行的逐字信息：`handleShowLyric` 重新上屏时要连它一起恢复 */
+  private List<WordLyric.Segment> currentWordSegments = null;
+  private int currentWordLineTime = 0;
 
   private int mLastRotation;
   private OrientationEventListener orientationEventListener = null;
@@ -378,6 +381,8 @@ public class LyricView extends Activity implements View.OnTouchListener {
     if (text.equals("") && text.equals(currentLyric) && extendedLyrics.size() == 0) return;
     currentLyric = text;
     currentExtendedLyrics = extendedLyrics;
+    currentWordSegments = wordSegments;
+    currentWordLineTime = wordLineTime;
     if (textView == null) return;
     // 先给逐字信息、再 setText：`LyricSwitchView.setText` 会把它写到真正要显示的那个 view 上
     textView.setWordLyric(wordSegments, wordLineTime, player);
@@ -593,7 +598,7 @@ public class LyricView extends Activity implements View.OnTouchListener {
     if (isLock) lockView();
     else unlockView();
 
-    setLyric(currentLyric, currentExtendedLyrics);
+    setLyric(currentLyric, currentExtendedLyrics, currentWordSegments, currentWordLineTime);
   }
 
   public void setShowToggleAnima(boolean showToggleAnima) {

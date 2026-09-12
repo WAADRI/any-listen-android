@@ -131,8 +131,8 @@ public class LyricMultilineTextView extends TextView implements WordLyricView {
         .setMaxLines(maxLines > 0 ? maxLines : Integer.MAX_VALUE)
         .build();
     } else {
-      // API 21/22 没有 Builder，退化成不带行数上限的写法（这两个版本已极少见）
-      layout = new StaticLayout(text, paint, width, alignment, 1f, 0f, true, ellipsize, width);
+      // API 21/22 没有 Builder，退化成 8 参数版本（不带行数上限与省略宽度，这两个版本已极少见）
+      layout = new StaticLayout(text, paint, width, alignment, 1f, 0f, true, ellipsize);
     }
 
     layoutCacheText = plain;
