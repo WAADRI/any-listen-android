@@ -6,18 +6,21 @@
  *
  * ## 输入框为什么这样写
  *
- * 两个输入框都走 `settings/components/InputItem`，与「同步」页的服务器地址
- * 输入框（settings/Sync/IsEnable.tsx）完全一致。这里刻意照抄它，因为那是
- * 本仓库里唯一经过验证的「服务器地址」输入：
+ * 一开始照搬了「同步」页的 `settings/components/InputItem`（settings/Sync/IsEnable.tsx），
+ * 那是本仓库唯一经过验证的服务器地址输入。但它**只在自己失焦时**才回调，
+ * 而设置页的列表用了 `keyboardShouldPersistTaps="always"`，点按钮时输入框
+ * 不会失焦 —— 于是回调从未触发，点「测试连接」时读到的是**空密码**。
+ * 日志里留下了铁证：「密码诊断：长度=0」（空串的 sha256 是 `e3b0c442`）。
  *
- * - 用 `inputMode="url"` 而**不是** `keyboardType="url"`（上游把后者注释掉了）；
- * - 每个输入框各自 `memo` 成独立组件，打字期间不会层层向上重渲染设置树；
- * - `onChanged(value, callback)` 只在**失焦 / 键盘收起**时提交，
- *   而不是每个按键都写一次全局设置（那会让整页反复重渲染，实测日志里
- *   出现过 `Skipped 80 frames!` 与 `Davey! duration=1865ms`）。
+ * 所以现在两个输入框各自 `memo` 成独立组件，内部自管 state 并**逐键**回调：
  *
- * 因此这里维护 `urlRef` / `passwordRef` 记录「界面上最新的值」，
- * 点按钮时直接用它们，不必依赖「先失焦才生效」的顺序。
+ * - 最新值随时可用（`urlRef` / `passwordRef`），不依赖失焦这类交互时序；
+ * - 逐键只更新各自的局部 state，不写全局设置，因此不会像早先那样
+ *   每敲一个字就重渲染整页（实测出现过 `Skipped 80 frames!` 与
+ *   `Davey! duration=1865ms`）。
+ *
+ * 键盘类型仍沿用「同步」页的做法：用 `inputMode="url"`，
+ * 而不是 `keyboardType="url"`。
  *
  * ## 为什么「测试连接」要一路测到真实数据
  *
@@ -40,7 +43,7 @@
 import { memo, useCallback, useRef, useState } from 'react'
 import { View } from 'react-native'
 
-import InputItem from '../../components/InputItem'
+import Input from '@/components/common/Input'
 import Text from '@/components/common/Text'
 import Button from '@/components/common/Button'
 import { createStyle, toast } from '@/utils/tools'
@@ -94,40 +97,66 @@ function summarizeLists(all: AnyListenMyAllList | undefined): { lists: number, t
 /**
  * 服务器地址输入框。
  *
- * 单独 memo 成组件，这样打字只重渲染它自己，不会波及设置页其余部分 ——
- * 照抄 Sync/IsEnable.tsx 里 HostInput 的做法。
+ * ## 为什么不用 `InputItem`
+ *
+ * 上游设置页的文本输入走 `settings/components/InputItem`，它把内容放在
+ * **自己的局部 state** 里，只在 `onBlur` / 键盘收起时才回调 —— 这样打字
+ * 期间完全不惊动外层。对普通设置项这是对的。
+ *
+ * 但这里不行，实测踩到了：设置页的列表用了
+ * `keyboardShouldPersistTaps="always"`，点按钮时输入框**不会失焦**，
+ * 于是 `onChanged` 从未触发，回调拿到的始终是初始的空值。日志里表现为
+ * 「密码诊断：长度=0」（空串的 sha256 是 e3b0c442），密码框明明有内容却
+ * 校验失败。
+ *
+ * 所以这里自己维护局部 state + `onChangeText`：**每次按键都记下最新值**，
+ * 但只改本组件自己的 state，不写全局设置、也不触发设置页重渲染，
+ * 因此既没有 blur 依赖，也不会重现「打字卡死」。
  */
-const UrlInput = memo(({ value, onChange }: { value: string, onChange: (value: string) => void }) => (
-  <InputItem
-    value={value}
-    label="服务器地址"
-    placeholder="https://music.example.com"
-    // 与「同步」页一致：用 inputMode 而不是 keyboardType="url"
-    inputMode="url"
-    onChanged={(text, callback) => {
-      const next = normalizeServerUrl(text)
-      // 把规范化后的值回填到输入框，否则用户看到的是自己输入的原文，
-      // 而实际保存的可能是补过协议头 / 去掉尾斜杠的版本。
-      callback(next)
-      onChange(next)
-    }}
-  />
-))
+const UrlInput = memo(({ initialValue, onChange }: { initialValue: string, onChange: (value: string) => void }) => {
+  const theme = useTheme()
+  const [text, setText] = useState(initialValue)
+  return (
+    <View style={styles.field}>
+      <Text size={13} style={styles.label}>服务器地址</Text>
+      <Input
+        value={text}
+        placeholder="https://music.example.com"
+        autoCorrect={false}
+        // 与「同步」页一致：用 inputMode 而不是 keyboardType="url"
+        inputMode="url"
+        onChangeText={(next) => {
+          setText(next)
+          onChange(next)
+        }}
+        style={{ ...styles.input, backgroundColor: theme['c-primary-input-background'] }}
+      />
+    </View>
+  )
+})
 
-/** 访问密码输入框。同样独立 memo。 */
-const PasswordInput = memo(({ value, onChange }: { value: string, onChange: (value: string) => void }) => (
-  <InputItem
-    value={value}
-    label="访问密码"
-    placeholder="与网页端登录使用同一个密码"
-    inputMode="text"
-    secureTextEntry
-    onChanged={(text, callback) => {
-      callback(text)
-      onChange(text)
-    }}
-  />
-))
+/** 访问密码输入框。同样自己维护最新值，不依赖失焦。 */
+const PasswordInput = memo(({ initialValue, onChange }: { initialValue: string, onChange: (value: string) => void }) => {
+  const theme = useTheme()
+  const [text, setText] = useState(initialValue)
+  return (
+    <View style={styles.field}>
+      <Text size={13} style={styles.label}>访问密码</Text>
+      <Input
+        value={text}
+        placeholder="与网页端登录使用同一个密码"
+        autoCorrect={false}
+        secureTextEntry
+        inputMode="text"
+        onChangeText={(next) => {
+          setText(next)
+          onChange(next)
+        }}
+        style={{ ...styles.input, backgroundColor: theme['c-primary-input-background'] }}
+      />
+    </View>
+  )
+})
 
 const ServerSetting = memo(() => {
   const theme = useTheme()
@@ -138,26 +167,23 @@ const ServerSetting = memo(() => {
   const [password, setPassword] = useState(savedPassword ?? '')
   const [test, setTest] = useState<TestState>({ kind: 'idle' })
 
-  // 界面上「最新的值」。InputItem 只在失焦时提交，所以不能只读 state ——
-  // 用户输完直接点按钮时 state 可能还是旧值，用 ref 才能拿到刚输入的内容。
+  // 界面上「最新的值」。两个输入框各自维护局部 state 并**逐键**回调，
+  // 所以 ref 始终最新；用 ref 是为了让 test / save 直接读，不依赖 state 更新时机。
   const urlRef = useRef(url)
   const passwordRef = useRef(password)
 
   const handleUrlChange = useCallback((next: string) => {
     urlRef.current = next
-    setUrl(next)
   }, [])
   const handlePasswordChange = useCallback((next: string) => {
     passwordRef.current = next
-    setPassword(next)
   }, [])
 
-  // 测试与保存都用「界面上最新的值」并顺手回写 state
-  const current = useCallback(() => {
-    setUrl(urlRef.current)
-    setPassword(passwordRef.current)
-    return { url: urlRef.current, password: passwordRef.current }
-  }, [])
+  // 测试与保存都用 ref 里的最新值
+  const current = useCallback(() => ({
+    url: urlRef.current,
+    password: passwordRef.current,
+  }), [])
 
   const testSeq = useRef(0)
 
@@ -272,13 +298,15 @@ const ServerSetting = memo(() => {
         本应用的歌曲、歌单、封面与歌词全部来自你自己部署的 any-listen 服务器。
       </Text>
 
-      <UrlInput value={url} onChange={handleUrlChange} />
+      {/* 只在挂载时用已保存的值做初值：之后输入框自管内容，
+          避免受控回写把用户正在输入的内容覆盖掉。 */}
+      <UrlInput initialValue={url} onChange={handleUrlChange} />
 
       <Text size={11} style={styles.hint}>
         需带 http:// 或 https://。挂在反向代理子路径下时写完整路径（例如 https://example.com/music）。
       </Text>
 
-      <PasswordInput value={password} onChange={handlePasswordChange} />
+      <PasswordInput initialValue={password} onChange={handlePasswordChange} />
 
       <Text size={11} style={styles.hint}>
         密码连续输错会被服务端拉黑 IP，请先用「测试连接」确认。
@@ -333,22 +361,32 @@ export default ServerSetting
 
 const styles = createStyle({
   container: {
-    // 注意：不要在这里再加 paddingLeft —— InputItem 自带 paddingLeft: 25 与
-    // marginBottom: 15，否则输入框会比同页其他项多缩进一层。
+    paddingLeft: 25,
     paddingRight: 25,
     marginBottom: 18,
   },
   title: {
-    marginLeft: 15,
+    marginLeft: -10,
     marginBottom: 6,
   },
   desc: {
     marginBottom: 16,
     lineHeight: 18,
   },
+  field: {
+    marginBottom: 4,
+  },
+  label: {
+    marginBottom: 6,
+  },
+  input: {
+    borderRadius: 4,
+    paddingLeft: 8,
+    paddingRight: 8,
+  },
   hint: {
     marginTop: 6,
-    marginBottom: 10,
+    marginBottom: 12,
     lineHeight: 16,
   },
   actions: {
