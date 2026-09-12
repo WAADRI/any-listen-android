@@ -6,12 +6,12 @@ import { createStyle } from '@/utils/tools'
 // import { useComponentIds } from '@/store/common/hook'
 import { useTheme } from '@/store/theme/hook'
 import { useSettingValue } from '@/store/setting/hook'
-import Text, { AnimatedColorText } from '@/components/common/Text'
+import { AnimatedColorText } from '@/components/common/Text'
 import { setSpText } from '@/utils/pixelRatio'
 import playerState from '@/store/player/state'
 import { scrollTo } from '@/utils/scroll'
 import { findAwlrcLine, type Awlrc } from '@/utils/awlrc'
-import { useWordLyricProgress } from '@/utils/hooks/useWordLyricProgress'
+import WordLyricLine from '../components/WordLyricLine'
 import PlayLine, { type PlayLineType } from '../components/PlayLine'
 // import { screenkeepAwake } from '@/utils/nativeModules/utils'
 // import { log } from '@/utils/log'
@@ -76,8 +76,6 @@ const LrcLine = memo(({ line, lineNum, activeLine, awlrc, onLayout }: LineProps)
   const isActive = activeLine == lineNum
   // 只有当前行需要逐字信息；段的时间是相对本行的，取不到就退回逐行显示
   const awlrcLine = isActive ? findAwlrcLine(awlrc, lineNum, line.time, line.text) : undefined
-  const played = useWordLyricProgress(awlrcLine)
-  const segments = awlrcLine?.segments.length ? awlrcLine.segments : null
 
   const colors = useMemo(() => {
     const active = activeLine == lineNum
@@ -101,20 +99,25 @@ const LrcLine = memo(({ line, lineNum, activeLine, awlrc, onLayout }: LineProps)
   // https://stackoverflow.com/a/72822360
   return (
     <View style={styles.line} onLayout={handleLayout}>
-      <AnimatedColorText style={{
-        ...styles.lineText,
-        textAlign,
-        lineHeight,
-      }} textBreakStrategy="simple" color={colors[0]} opacity={colors[2]} size={size}>{
-          // 逐字歌词：一个字/词一段，唱到的段用已唱色。配色对应 any-listen 播放页的
-          // `@unplay-font-color: --color-250` / `@played-color: --color-primary`：
-          // 没唱到的是灰字，唱到的转主题色，整行唱完就与普通当前行完全一致
-          segments
-            ? segments.map((segment, index) => (
-              <Text key={index} size={size} color={index < played ? colors[0] : theme['c-250']}>{segment.text}</Text>
-            ))
-            : line.text
-        }</AnimatedColorText>
+      {
+        // 逐字歌词：当前行交给 WordLyricLine（两层扫光，见该文件）。
+        // 配色对应 any-listen / lx-music-desktop 播放页的
+        // `@unplay-font-color: --color-250` / `@played-color: --color-primary`
+        awlrcLine?.segments.length
+          ? <WordLyricLine
+            line={awlrcLine}
+            size={size}
+            lineHeight={lineHeight}
+            textAlign={textAlign}
+            playedColor={colors[0]}
+            unplayColor={theme['c-250']}
+          />
+          : <AnimatedColorText style={{
+            ...styles.lineText,
+            textAlign,
+            lineHeight,
+          }} textBreakStrategy="simple" color={colors[0]} opacity={colors[2]} size={size}>{line.text}</AnimatedColorText>
+      }
       {
         line.extendedLyrics.map((lrc, index) => {
           return (<AnimatedColorText style={{
@@ -130,7 +133,7 @@ const LrcLine = memo(({ line, lineNum, activeLine, awlrc, onLayout }: LineProps)
   if (prevProps.line !== nextProps.line || prevProps.awlrc !== nextProps.awlrc) return false
   // 焦点变化必须重渲染，否则会留着另一套配色（已唱色 / 未唱色）
   if ((prevProps.activeLine == prevProps.lineNum) !== (nextProps.activeLine == nextProps.lineNum)) return false
-  // 其余情况：当前行的逐字进度由组件自身的 state 推进，与父组件无关，不用跟着重画
+  // 其余情况不用跟着父组件重画：逐字进度与扫光都在 WordLyricLine 里自己推进
   return true
 })
 const wait = async() => new Promise(resolve => setTimeout(resolve, 100))
