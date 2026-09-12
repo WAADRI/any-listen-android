@@ -34,6 +34,8 @@ public class Lyric extends LyricPlayer {
   String lyricText = "";
   String translationText = "";
   String romaLyricText = "";
+  /** 閫愬瓧姝岃瘝锛堟湇鍔＄ awlyric锛孞S 渚цВ鏋愬悗浼犺繘鏉ワ級锛岀敤浜庢闈㈡瓕璇嶇殑閫愬瓧鎵厜 */
+  List<WordLyric.Line> wordLines = new ArrayList<>();
 
   Lyric(ReactApplicationContext reactContext, boolean isShowTranslation, boolean isShowRoma, float playbackRate) {
     this.reactAppContext = reactContext;
@@ -81,12 +83,12 @@ public class Lyric extends LyricPlayer {
   //         if (profile == BluetoothProfile.A2DP) {
   //           List<BluetoothDevice> connectedDevices = proxy.getConnectedDevices();
   //           if (!connectedDevices.isEmpty()) {
-  //             System.out.println("已连接的 A2DP 媒体设备：");
+  //             System.out.println("宸茶繛鎺ョ殑 A2DP 濯掍綋璁惧锛?);
   //             for (BluetoothDevice device : connectedDevices) {
-  //               System.out.println("设备名称: " + "地址: " + device.getAddress());
+  //               System.out.println("璁惧鍚嶇О: " + "鍦板潃: " + device.getAddress());
   //             }
   //           } else {
-  //             System.out.println("没有连接的 A2DP 媒体设备");
+  //             System.out.println("娌℃湁杩炴帴鐨?A2DP 濯掍綋璁惧");
   //           }
   //         }
   //         bluetoothAdapter.closeProfileProxy(profile, proxy);
@@ -94,12 +96,12 @@ public class Lyric extends LyricPlayer {
 
   //       @Override
   //       public void onServiceDisconnected(int profile) {
-  //         // 服务断开时的处理
-  //         System.out.println("蓝牙服务断开时的处理");
+  //         // 鏈嶅姟鏂紑鏃剁殑澶勭悊
+  //         System.out.println("钃濈墮鏈嶅姟鏂紑鏃剁殑澶勭悊");
   //       }
   //     }, BluetoothProfile.A2DP);
   //   } else {
-  //     System.out.println("蓝牙未开启或设备不支持蓝牙");
+  //     System.out.println("钃濈墮鏈紑鍚垨璁惧涓嶆敮鎸佽摑鐗?);
   //   }
   // }
 
@@ -115,7 +117,10 @@ public class Lyric extends LyricPlayer {
   private void handleScreenOn() {
     isScreenOff = false;
     if (isDisableAutoPause()) return;
-    if (lyricView == null) lyricView = new LyricView(reactAppContext, lyricEvent);
+    if (lyricView == null) {
+        lyricView = new LyricView(reactAppContext, lyricEvent);
+        lyricView.setPlayer(this);
+      }
     lyricView.runOnUiThread(() -> {
       handleGetCurrentLyric(lastLine);
       setTempPause(false);
@@ -128,9 +133,10 @@ public class Lyric extends LyricPlayer {
     this.pause();
   }
 
-  private void setCurrentLyric(String lyric, ArrayList<String> extendedLyrics) {
+  private void setCurrentLyric(String lyric, ArrayList<String> extendedLyrics, WordLyric.Line wordLine) {
     if (isShowLyricView && !isScreenOff && lyricView != null) {
-      lyricView.setLyric(lyric, extendedLyrics);
+      if (wordLine == null) lyricView.setLyric(lyric, extendedLyrics, null, 0);
+      else lyricView.setLyric(lyric, extendedLyrics, wordLine.segments, wordLine.time);
     }
     if (isSendLyricTextEvent) {
       WritableMap params = Arguments.createMap();
@@ -144,11 +150,16 @@ public class Lyric extends LyricPlayer {
     if (lineNum >= 0 && lineNum < lines.size()) {
       HashMap line = (HashMap) lines.get(lineNum);
       if (line != null) {
-        setCurrentLyric((String) line.get("text"), (ArrayList<String>) line.get("extendedLyrics"));
+        String text = (String) line.get("text");
+        Object time = line.get("time");
+        // 閫愬瓧姝岃瘝鐢?JS 渚цВ鏋愶紝杩欒竟鐨勮搴?鍘婚噸瑙勫垯涓庡畠涓嶅畬鍏ㄤ竴鑷达紝
+        // 鎵€浠ユ寜琛屾椂闂村尮閰嶃€佽鍙峰厹搴曪紝骞惰姹傛鏂囦竴鑷达紙瑙?WordLyric.findLine锛?
+        WordLyric.Line wordLine = WordLyric.findLine(wordLines, lineNum, time == null ? -1 : (int) time, text);
+        setCurrentLyric(text, (ArrayList<String>) line.get("extendedLyrics"), wordLine);
         return;
       }
     }
-    setCurrentLyric("", new ArrayList<>(0));
+    setCurrentLyric("", new ArrayList<>(0), null);
   }
 
   public void setSendLyricTextEvent(boolean isSend) {
@@ -166,7 +177,10 @@ public class Lyric extends LyricPlayer {
     if (isShowLyricView) return;
     if (lyricEvent == null) lyricEvent = new LyricEvent(reactAppContext);
     isShowLyricView = true;
-    if (lyricView == null) lyricView = new LyricView(reactAppContext, lyricEvent);
+    if (lyricView == null) {
+        lyricView = new LyricView(reactAppContext, lyricEvent);
+        lyricView.setPlayer(this);
+      }
     try {
       lyricView.showLyricView(options);
     } catch (Exception e) {
@@ -196,11 +210,28 @@ public class Lyric extends LyricPlayer {
     super.setLyric(lyricText, extendedLyrics);
   }
 
-  public void setLyric(String lyric, String translation, String romaLyric) {
+  public void setLyric(String lyric, String translation, String romaLyric, List<WordLyric.Line> wordLines) {
     lyricText = lyric;
     translationText = translation;
     romaLyricText = romaLyric;
+    this.wordLines = wordLines == null ? new ArrayList<>() : wordLines;
     refreshLyric();
+  }
+
+  /**
+   * 鎾斁/鏆傚仠鏃惰妗岄潰姝岃瘝鐨勬壂鍏夌珛鍒昏窡涓婏細鏆傚仠鏃跺畠鍐诲湪褰撳墠杩涘害锛?
+   * 鎭㈠鎾斁鍚庡鏋滄病浜洪噸鐢伙紝灏变細涓€鐩村仠鍦ㄩ偅閲岀洿鍒颁笅涓€琛屻€?
+   */
+  @Override
+  public void play(int curTime) {
+    super.play(curTime);
+    if (lyricView != null) lyricView.invalidateWordSweep();
+  }
+
+  @Override
+  public void pause() {
+    super.pause();
+    if (lyricView != null) lyricView.invalidateWordSweep();
   }
 
   @Override
@@ -221,16 +252,16 @@ public class Lyric extends LyricPlayer {
 
   public void pauseLyric() {
     pause();
-    // 暂停时**不要**把当前行清掉。
+    // 鏆傚仠鏃?*涓嶈**鎶婂綋鍓嶈娓呮帀銆?
     //
-    // 上游这里写的是 `handleGetCurrentLyric(-1)`，而 -1 会落到
-    // `setCurrentLyric("")` —— 桌面歌词窗口在暂停瞬间整块变成空的（用户可见的
-    // 缺陷：暂停后歌词消失，恢复播放才回来）。而且 `lastLine` 被置成 -1 之后，
-    // 息屏再亮屏时 `handleScreenOn` 恢复的也是空行。
+    // 涓婃父杩欓噷鍐欑殑鏄?`handleGetCurrentLyric(-1)`锛岃€?-1 浼氳惤鍒?
+    // `setCurrentLyric("")` 鈥斺€?妗岄潰姝岃瘝绐楀彛鍦ㄦ殏鍋滅灛闂存暣鍧楀彉鎴愮┖鐨勶紙鐢ㄦ埛鍙鐨?
+    // 缂洪櫡锛氭殏鍋滃悗姝岃瘝娑堝け锛屾仮澶嶆挱鏀炬墠鍥炴潵锛夈€傝€屼笖 `lastLine` 琚疆鎴?-1 涔嬪悗锛?
+    // 鎭睆鍐嶄寒灞忔椂 `handleScreenOn` 鎭㈠鐨勪篃鏄┖琛屻€?
     //
-    // 现在只暂停解析器：窗口保持显示当前行，`lastLine` 也保持在那一行，
-    // 恢复播放后 `onPlay` 会继续给出正确的行。换歌时 `onSetLyric` 仍会清空，
-    // 停止播放时 JS 侧会 `setLyric('')`，两条清空路径都不受影响。
+    // 鐜板湪鍙殏鍋滆В鏋愬櫒锛氱獥鍙ｄ繚鎸佹樉绀哄綋鍓嶈锛宍lastLine` 涔熶繚鎸佸湪閭ｄ竴琛岋紝
+    // 鎭㈠鎾斁鍚?`onPlay` 浼氱户缁粰鍑烘纭殑琛屻€傛崲姝屾椂 `onSetLyric` 浠嶄細娓呯┖锛?
+    // 鍋滄鎾斁鏃?JS 渚т細 `setLyric('')`锛屼袱鏉℃竻绌鸿矾寰勯兘涓嶅彈褰卞搷銆?
   }
 
   public void lockLyric() {

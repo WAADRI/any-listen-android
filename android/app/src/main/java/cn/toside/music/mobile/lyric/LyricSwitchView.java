@@ -17,6 +17,7 @@ import android.widget.TextView;
 import androidx.annotation.Nullable;
 
 import java.util.ArrayList;
+import java.util.List;
 
 // https://github.com/Block-Network/StatusBarLyric/blob/main/app/src/main/java/statusbar/lyric/view/LyricSwitchView.kt
 @SuppressLint({"ViewConstructor"})
@@ -28,6 +29,12 @@ public final class LyricSwitchView extends TextSwitcher {
   private boolean isShowAnima;
 
   private boolean isSingleLine;
+
+  // 当前行的逐字信息：`TextSwitcher` 把文字写到「下一个」view，逐字信息也要跟着写过去，
+  // 否则切换动画期间旧行会拿新行的逐字时间去扫（画出来就是乱的）
+  private List<WordLyric.Segment> wordSegments = null;
+  private int wordLineTime = 0;
+  private LyricPlayer wordPlayer = null;
 
   public LyricSwitchView(Context context, boolean isSingleLine, boolean isShowAnima) {
     super(context);
@@ -45,9 +52,11 @@ public final class LyricSwitchView extends TextSwitcher {
 //        v.setShadowLayer(0.1f, 0, 0, Color.BLACK);
 //      }
     } else {
+      // 多行模式也要逐字扫光，所以用自绘控件（普通 TextView 的文字由框架一次画完，
+      // 外部没法只画「已唱到的那一部分」）
       viewArray = new ArrayList<>(2);
-      textView = new TextView(context);
-      textView2 = new TextView(context);
+      textView = new LyricMultilineTextView(context);
+      textView2 = new LyricMultilineTextView(context);
       viewArray.add(textView);
       viewArray.add(textView2);
       for (TextView v : viewArray) {
@@ -58,6 +67,55 @@ public final class LyricSwitchView extends TextSwitcher {
     setAnima();
     this.addView(textView);
     this.addView(textView2);
+  }
+
+  /**
+   * 下一个要被显示的 view。
+   *
+   * `ViewAnimator.getNextView()` 是包内可见的，子类调不到，所以用公开的
+   * `getCurrentView()` 反推：两个子 view 里「不是当前那个」就是下一个。
+   */
+  private TextView getNextLyricView() {
+    View current = getCurrentView();
+    if (current == null || current == textView2) return textView;
+    return textView2;
+  }
+
+  @Override
+  public void setText(CharSequence text) {
+    TextView nextView = getNextLyricView();
+    if (nextView instanceof WordLyricView && wordPlayer != null) {
+      ((WordLyricView) nextView).setWordLyric(wordSegments, wordLineTime, wordPlayer);
+    }
+    super.setText(text);
+  }
+
+  /** 记住当前行的逐字信息，等 `setText` 时交给真正要显示的那个 view */
+  public void setWordLyric(List<WordLyric.Segment> segments, int lineTime, LyricPlayer player) {
+    wordSegments = segments;
+    wordLineTime = lineTime;
+    wordPlayer = player;
+  }
+
+  public void setUnplayColor(int color) {
+    for (TextView v : viewArray) {
+      if (v instanceof WordLyricView) ((WordLyricView) v).setUnplayColor(color);
+    }
+  }
+
+  /** 把播放器交给两个 view（它们自己按播放位置算扫到哪了） */
+  public void setPlayer(LyricPlayer player) {
+    wordPlayer = player;
+    for (TextView v : viewArray) {
+      if (v instanceof WordLyricView) ((WordLyricView) v).setPlayer(player);
+    }
+  }
+
+  /** 播放/暂停切换后让扫光重新动起来（暂停时扫光冻在当前进度，恢复后要接着走） */
+  public void invalidateWordSweep() {
+    for (TextView v : viewArray) {
+      if (v instanceof WordLyricView) ((WordLyricView) v).invalidateWordSweep();
+    }
   }
 
   @Nullable

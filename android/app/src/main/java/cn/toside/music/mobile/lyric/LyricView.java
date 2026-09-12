@@ -23,6 +23,7 @@ import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.WritableMap;
 
 import java.util.ArrayList;
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -68,6 +69,8 @@ public class LyricView extends Activity implements View.OnTouchListener {
   // private float lineHeight = 1;
   private String currentLyric = "LX Music ^-^";
   private ArrayList<String> currentExtendedLyrics = new ArrayList<>();
+  /** 取播放位置用（逐字扫光） */
+  private LyricPlayer player = null;
 
   private int mLastRotation;
   private OrientationEventListener orientationEventListener = null;
@@ -253,9 +256,11 @@ public class LyricView extends Activity implements View.OnTouchListener {
     textView.setText(currentLyric);
 
     textView.setTextColor(parseColor(playedColor));
+    textView.setUnplayColor(parseColor(unplayColor));
     textView.setShadowColor(parseColor(shadowColor));
     textView.setAlpha(alpha);
     textView.setTextSize(textSize);
+    textView.setPlayer(player);
     // Log.d("Lyric", "alpha: " + alpha + " text size: " + textSize);
 
     //监听 OnTouch 事件 为了实现"移动歌词"功能
@@ -369,11 +374,13 @@ public class LyricView extends Activity implements View.OnTouchListener {
     windowManager.addView(textView, layoutParams);
   }
 
-  public void setLyric(String text, ArrayList<String> extendedLyrics) {
+  public void setLyric(String text, ArrayList<String> extendedLyrics, List<WordLyric.Segment> wordSegments, int wordLineTime) {
     if (text.equals("") && text.equals(currentLyric) && extendedLyrics.size() == 0) return;
     currentLyric = text;
     currentExtendedLyrics = extendedLyrics;
     if (textView == null) return;
+    // 先给逐字信息、再 setText：`LyricSwitchView.setText` 会把它写到真正要显示的那个 view 上
+    textView.setWordLyric(wordSegments, wordLineTime, player);
     if (extendedLyrics.size() > 0 && maxLineNum > 1 && !isSingleLine) {
       int num = maxLineNum - 1;
       StringBuilder textBuilder = new StringBuilder(text);
@@ -383,7 +390,6 @@ public class LyricView extends Activity implements View.OnTouchListener {
       }
       text = textBuilder.toString();
     }
-    if (textView == null) return;
     textView.setText(text);
   }
 
@@ -518,8 +524,20 @@ public class LyricView extends Activity implements View.OnTouchListener {
     this.shadowColor = shadowColor;
     if (textView == null) return;
     textView.setTextColor(parseColor(playedColor));
+    textView.setUnplayColor(parseColor(unplayColor));
     textView.setShadowColor(parseColor(shadowColor));
     // windowManager.updateViewLayout(textView, layoutParams);
+  }
+
+  /** 逐字扫光要知道「现在播到哪了」，所以把播放器交给歌词文字控件 */
+  public void setPlayer(LyricPlayer player) {
+    this.player = player;
+    if (textView != null) textView.setPlayer(player);
+  }
+
+  /** 播放/暂停切换后让扫光接着走（暂停时它冻在当前进度） */
+  public void invalidateWordSweep() {
+    if (textView != null) textView.invalidateWordSweep();
   }
 
   public void setLyricTextPosition(String textX, String textY) {

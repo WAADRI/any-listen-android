@@ -1,4 +1,5 @@
 import { NativeModules, NativeEventEmitter } from 'react-native'
+import type { NativeWordLine } from '@/utils/awlrc'
 
 const { LyricModule } = NativeModules
 
@@ -121,10 +122,11 @@ export const pause = async(): Promise<void> => {
  * set lyric
  * @param lyric lyric str
  * @param translation lyric translation
- * @param romalrc lyric translation
+ * @param romalrc lyric roma
+ * @param wordLines 逐字歌词（`toNativeWordLines` 的产物），桌面歌词据此逐字扫光
  */
-export const setLyric = async(lyric: string, translation: string, romalrc: string): Promise<void> => {
-  return LyricModule.setLyric(lyric, translation || '', romalrc || '')
+export const setLyric = async(lyric: string, translation: string, romalrc: string, wordLines: NativeWordLine[] = []): Promise<void> => {
+  return LyricModule.setLyric(lyric, translation || '', romalrc || '', wordLines)
 }
 
 export const setPlaybackRate = async(rate: number): Promise<void> => {

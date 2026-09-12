@@ -8,9 +8,11 @@ import android.util.Log;
 import android.view.Gravity;
 import android.widget.TextView;
 
+import java.util.List;
+
 // https://github.com/Block-Network/StatusBarLyric/blob/main/app/src/main/java/statusbar/lyric/view/LyricTextView.kt
 @SuppressLint("AppCompatCustomView")
-public class LyricTextView extends TextView {
+public class LyricTextView extends TextView implements WordLyricView {
   private boolean isStop = true;
   private float textLength = 0F;
   private float viewWidth = 0F;
@@ -28,13 +30,79 @@ public class LyricTextView extends TextView {
   public static final int startScrollDelay = 1500;
   public static final int invalidateDelay = 10;
 
+  // 逐字扫光：未唱色画一遍，已唱色裁到「唱到的位置」再画一遍
+  private static final int WORD_INVALIDATE_DELAY = 16;
+  private int unplayColor;
+  private int playedColor;
+  private List<WordLyric.Segment> wordSegments = null;
+  private int wordLineTime = 0;
+  private LyricPlayer player = null;
+  private final Runnable wordInvalidateRunnable;
+
   public LyricTextView(Context context) {
     super(context);
     mStartScrollRunnable = LyricTextView.this::startScroll;
     invalidateRunnable = LyricTextView.this::invalidate;
+    wordInvalidateRunnable = LyricTextView.this::invalidate;
     mPaint = getPaint();
     speed = SPEED_LIMIT * getTextSize();
+    unplayColor = getCurrentTextColor();
+    playedColor = unplayColor;
   }
+
+  @Override
+  public void setUnplayColor(int color) {
+    unplayColor = color;
+    postInvalidate();
+  }
+
+  @Override
+  public void setPlayedColor(int color) {
+    setTextColor(color);
+  }
+
+  @Override
+  public void setWordLyric(List<WordLyric.Segment> segments, int lineTime, LyricPlayer player) {
+    wordSegments = segments;
+    wordLineTime = lineTime;
+    this.player = player;
+    postInvalidate();
+  }
+
+  @Override
+  public void setPlayer(LyricPlayer player) {
+    this.player = player;
+    postInvalidate();
+  }
+
+  @Override
+  public void invalidateWordSweep() {
+    postInvalidate();
+  }
+
+  /**
+   * 已经唱到文字的第几个像素。返回 -1 表示这一行没有逐字信息（整行用已唱色）。
+   *
+   * 位置由「已唱到第几个字」（{@link WordLyric#charPositionAt}）用当前画笔量出来，
+   * 字内还按比例插值，所以扫过的时候是在一个字**内部**推进，而不是整字跳变。
+   */
+  private float getSweptWidth() {
+    if (wordSegments == null || wordSegments.isEmpty() || player == null || !player.hasPlayed() || text == null) return -1F;
+    float charPosition = WordLyric.charPositionAt(wordSegments, player.getCurrentTimeMs() - wordLineTime);
+    int index = (int) charPosition;
+    float fraction = charPosition - index;
+    if (index >= text.length()) return textLength;
+    float before = mPaint.measureText(text, 0, index);
+    float current = index + 1 <= text.length() ? mPaint.measureText(text, index, index + 1) : 0F;
+    return Math.min(before + current * fraction, textLength);
+  }
+
+  private void scheduleWordInvalidate() {
+    if (player == null || !player.isPlaying()) return;
+    removeCallbacks(wordInvalidateRunnable);
+    postDelayed(wordInvalidateRunnable, WORD_INVALIDATE_DELAY);
+  }
+
 
   private void init() {
     xx = 0.0F;
@@ -45,6 +113,7 @@ public class LyricTextView extends TextView {
   @Override
   protected void onDetachedFromWindow() {
     removeCallbacks(mStartScrollRunnable);
+    removeCallbacks(wordInvalidateRunnable);
     super.onDetachedFromWindow();
   }
 
@@ -119,7 +188,27 @@ public class LyricTextView extends TextView {
     float mSpeed = speed;
     if (text != null) {
       Log.d("Lyric", "getHeight: " + getHeight() + " y: " + y);
-      canvas.drawText(text, getDrawX(), y, mPaint);
+      float drawX = getDrawX();
+      mPaint.setColor(unplayColor);
+      canvas.drawText(text, drawX, y, mPaint);
+
+      float swept = getSweptWidth();
+      if (swept < 0F) {
+        // 没有逐字信息（或还没开始播）：整行用已唱色，与改动前一致
+        mPaint.setColor(playedColor);
+        canvas.drawText(text, drawX, y, mPaint);
+      } else {
+        if (swept > 0F) {
+          canvas.save();
+          canvas.clipRect(drawX, 0F, drawX + swept, getHeight());
+          mPaint.setColor(playedColor);
+          canvas.drawText(text, drawX, y, mPaint);
+          canvas.restore();
+        }
+        // 还有得唱才继续刷；唱完或暂停后自然停下，不空转
+        if (swept < textLength) scheduleWordInvalidate();
+      }
+
       if (getText().length() >= 20) {
         mSpeed += mSpeed;
       }

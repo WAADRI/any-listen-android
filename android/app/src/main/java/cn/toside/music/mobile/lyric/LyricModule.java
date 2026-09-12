@@ -11,7 +11,11 @@ import com.facebook.react.bridge.Promise;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.ReactMethod;
+import com.facebook.react.bridge.ReadableArray;
 import com.facebook.react.bridge.ReadableMap;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public class LyricModule extends ReactContextBaseJavaModule {
   private final ReactApplicationContext reactContext;
@@ -86,11 +90,43 @@ public class LyricModule extends ReactContextBaseJavaModule {
 
 
   @ReactMethod
-  public void setLyric(String lyric, String translation, String romaLyric, Promise promise) {
+  public void setLyric(String lyric, String translation, String romaLyric, ReadableArray wordLines, Promise promise) {
     // Log.d("Lyric", "set lyric: " + lyric);
     // Log.d("Lyric", "set lyric translation: " + translation);
-    if (this.lyric != null) this.lyric.setLyric(lyric, translation, romaLyric);
+    if (this.lyric != null) this.lyric.setLyric(lyric, translation, romaLyric, parseWordLines(wordLines));
     promise.resolve(null);
+  }
+
+  /**
+   * 逐字歌词（JS 侧已经解析好，见 `src/utils/awlrc.ts`）：
+   *
+   * ```
+   * [ [行时间, [ [段起始, 段时长, 段文字], ... ], 行正文], ... ]
+   * ```
+   *
+   * 段的时间**相对本行起始**。解析放在 JS 侧是有意的：那边有单测 + 真实数据样本，
+   * 原生只负责「按时间把位置画出来」。
+   */
+  private static List<WordLyric.Line> parseWordLines(ReadableArray array) {
+    List<WordLyric.Line> lines = new ArrayList<>();
+    if (array == null) return lines;
+    for (int i = 0; i < array.size(); i++) {
+      ReadableArray entry = array.getArray(i);
+      if (entry == null || entry.size() < 3) continue;
+      int time = entry.getInt(0);
+      String text = entry.getString(2);
+      ReadableArray segmentsArray = entry.getArray(1);
+      List<WordLyric.Segment> segments = new ArrayList<>();
+      if (segmentsArray != null) {
+        for (int j = 0; j < segmentsArray.size(); j++) {
+          ReadableArray segment = segmentsArray.getArray(j);
+          if (segment == null || segment.size() < 3) continue;
+          segments.add(new WordLyric.Segment(segment.getInt(0), segment.getInt(1), segment.getString(2)));
+        }
+      }
+      lines.add(new WordLyric.Line(time, text, segments));
+    }
+    return lines;
   }
 
   @ReactMethod
