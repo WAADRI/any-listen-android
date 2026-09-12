@@ -163,27 +163,28 @@ export const clearSongListCache = () => {
 }
 
 /**
- * 展开 `getAllUserLists` 的返回。
+ * 取出要展示的歌单。
  *
- * 返回结构是 `{ defaultList, loveList, lastPlayList, userList }` —— **不是数组**，
- * 真实的用户歌单在 `userList` 里。（一开始按 `result.list` 读，那永远是空的。）
+ * `getAllUserLists` 返回的是 `{ defaultList, loveList, lastPlayList, userList }`
+ * —— **不是数组**。（一开始按 `result.list` 读，那永远是空的。）
  *
- * ## 为什么要用 `enabledRemove` 过滤
+ * ## 只取 `userList`
  *
- * 实测「全部歌曲」（`type: 'local'`，即服务端主机上挂载的 `/music` 文件夹）
- * 的 `meta.enabledRemove` 是 `false`，而用户手建的歌单是 `true`。
- * 这正是「哪些歌单该出现在浏览列表里」的天然标记：文件夹映射与内置列表
- * 用户既不能改名也不能删除，把它们混进歌单列表只会让人困惑。
+ * `defaultList` / `loveList` / `lastPlayList` 是服务端的内置列表，不是用户
+ * 建来浏览的歌单，混进歌单页只会让人困惑。实测它们的内容也是空的
+ * （`defaultList`、`loveList` 都没有歌），而真正的曲库在 `userList` 里 ——
+ * 包括 `type: 'local'` 的「全部歌曲」（该服务器上 1653 首，来自挂载的 /music）。
+ *
+ * 因此这里**不再**用 `meta.enabledRemove` 过滤：那个标记区分的是「能否被用户
+ * 删除」，而「全部歌曲」虽然不可删除，却正是用户最想点进去播放的歌单。
+ * 用 `enabledRemove` 过滤会把它连同文件夹映射一起排除掉。
  */
 function expandLists(all: AnyListenMyAllList | undefined | null): AnyListenUserList[] {
   if (!all) return []
-  const builtin = [all.defaultList, all.loveList, all.lastPlayList]
   const users = Array.isArray(all.userList) ? all.userList : []
-  return [...builtin, ...users].filter((list): list is AnyListenUserList => {
-    if (!list || typeof list.id !== 'string') return false
-    // 只保留可管理的歌单；`enabledRemove === false` 的是文件夹映射或内置项
-    return list.meta?.enabledRemove !== false
-  })
+  return users.filter((list): list is AnyListenUserList =>
+    !!list && typeof list.id === 'string',
+  )
 }
 
 /**
