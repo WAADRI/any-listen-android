@@ -160,6 +160,41 @@ function fetchCover(listId: string, serverUrl: string): Promise<string> {
 export const clearSongListCache = () => {
   detailCache.clear()
   coverCache.clear()
+  nameCache.clear()
+}
+
+/**
+ * 歌单名缓存。
+ *
+ * `getListDetail(id, page)` **只拿得到 id**（签名里没有名字），但详情页要显示
+ * 歌单名。早先这里写死成 `歌单（N 首）`，于是收藏到「我的列表」后名字就变成
+ * 那个样子 —— 那不是歌单名，只是占位文案。
+ *
+ * 所以 `getList` 拿到名字时记下来，`getListDetail` 按 id 取回。
+ */
+const nameCache = new Map<string, string>()
+
+function rememberListNames(lists: AnyListenUserList[], serverUrl: string): void {
+  for (const list of lists) {
+    if (list.name) nameCache.set(`${serverUrl}\u0000${list.id}`, list.name)
+  }
+}
+
+/**
+ * 详情页拿不到名字时的兜底：重新拉一次歌单列表来查。
+ * 正常路径（先经过歌单页）不会走到这里。
+ */
+async function findListName(listId: string, serverUrl: string): Promise<string | undefined> {
+  const key = `${serverUrl}\u0000${listId}`
+  const hit = nameCache.get(key)
+  if (hit) return hit
+  try {
+    const all = await getAllUserLists()
+    rememberListNames(expandLists(all), serverUrl)
+    return nameCache.get(key)
+  } catch {
+    return undefined
+  }
 }
 
 /**
@@ -225,6 +260,9 @@ export const getList = async(sortId: string, tagId: string, page: number): Promi
   const start = (safePage - 1) * PAGE_SIZE
   const pageLists = lists.slice(start, start + PAGE_SIZE)
 
+  // 记下名字，供详情页使用（详情页签名里没有名字）
+  rememberListNames(lists, serverUrl)
+
   // 并行取这一页的封面；单个失败不影响整个列表（fetchCover 内部已兜成空串）
   const covers = await Promise.all(pageLists.map((list) => fetchCover(list.id, serverUrl)))
 
@@ -272,6 +310,8 @@ export const getListDetail = async(id: string, page: number): Promise<ListDetail
 
   // 详情页头部的封面也走 getListCover（与列表格同一份缓存，不会重复请求）
   const cover = await fetchCover(id, serverUrl)
+  // 歌单名：签名里没有，靠 getList 时记下的缓存（必要时兜底重拉一次）
+  const name = await findListName(id, serverUrl)
 
   return {
     list: converted.slice(start, start + PAGE_SIZE),
@@ -283,7 +323,9 @@ export const getListDetail = async(id: string, page: number): Promise<ListDetail
     key: `anylisten__${id}__${safePage}`,
     id,
     info: {
-      name: `歌单（${total} 首）`,
+      // 用真实歌单名。之前写死成「歌单（N 首）」，收藏后会把这个占位文案
+      // 当成歌单名显示在「我的列表」里。
+      name: name ?? `歌单（${total} 首）`,
       img: cover,
       desc: '',
       author: '',
