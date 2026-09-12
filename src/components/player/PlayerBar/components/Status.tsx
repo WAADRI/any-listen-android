@@ -24,7 +24,7 @@ export default ({ autoUpdate }: { autoUpdate: boolean }) => {
   const isLyricLine = pickPlayBarText(isPlay, '', statusText) === ''
   // 底栏拿不到行时间，只能按行号取；正文一致才用（见 findAwlrcLine）
   const awlrcLine = isLyricLine ? findAwlrcLine(awlrc, line, undefined, text) : undefined
-  const played = useWordLyricProgress(awlrcLine)
+  const { played } = useWordLyricProgress(awlrcLine)
   const segments = awlrcLine?.segments.length ? awlrcLine.segments : null
 
   return (
