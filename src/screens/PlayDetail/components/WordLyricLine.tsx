@@ -158,10 +158,17 @@ const WordLyricLine = memo(({ line, size, lineHeight, textAlign, playedColor, un
     }
   }, [canSweep, ends, segments, line.timeMs, resyncVersion, clipWidth])
 
-  // 兜底：逐段换色（时段一行放不下、或还没量到位置）
+  // 兜底：逐段换色（一行放不下、或还没量到段宽时）。
+  //
+  // ⚠️ 这里**必须**也挂上测量行：段宽只有挂了 `onLayout` 才量得到，而扫光分支又要求
+  // 先量到段宽才会渲染——测量行若只放在扫光分支里，两者互相等待，永远进不去扫光。
+  // 真机上的表现就是「一个字一个字地换色，字内部不扫」（第一次实现踩过）。
   if (!canSweep) {
     return (
       <View onLayout={handleContainerLayout}>
+        <View style={styles.measure} pointerEvents="none">
+          <TextRow segments={segments} size={size} lineHeight={lineHeight} color={unplayColor} onSegmentLayout={handleSegmentLayout} />
+        </View>
         <Text
           style={{ textAlign, lineHeight }}
           textBreakStrategy="simple"
@@ -202,6 +209,14 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     flexDirection: 'row',
+  },
+  // 只用来量每一段的宽度与位置：不参与父容器排版，但自己会被正常布局（opacity 0 不影响布局）
+  measure: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    flexDirection: 'row',
+    opacity: 0,
   },
   clip: {
     position: 'absolute',

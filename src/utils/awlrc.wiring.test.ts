@@ -94,6 +94,19 @@ test('逐字渲染组件：一层未唱、一层已唱，用会长的裁剪盒�
   assert.match(component, /index < played \? playedColor : unplayColor/, '兜底渲染没有逐段换色')
 })
 
+test('兜底分支里也必须挂测量行（否则永远进不了扫光）', () => {
+  const component = read('../screens/PlayDetail/components/WordLyricLine.tsx')
+  // 真机踩过：段宽只有挂了 onLayout 才量得到，而扫光分支又要求先量到段宽才渲染。
+  // 测量行如果只放在扫光分支里，两者互相等待 —— 表现是「一个字一个字换色，字内部不扫」。
+  const fallbackStart = component.indexOf('if (!canSweep)')
+  assert.ok(fallbackStart >= 0, '找不到兜底分支，本用例已失效')
+  const sweepStart = component.indexOf('// 扫光：两层同一行文字')
+  assert.ok(sweepStart > fallbackStart, '找不到扫光分支的分界，本用例已失效')
+  const fallbackBody = component.slice(fallbackStart, sweepStart)
+  assert.match(fallbackBody, /styles\.measure/, '兜底分支里没有测量行：段宽永远量不到，扫光分支永远不会渲染')
+  assert.match(fallbackBody, /onSegmentLayout=\{handleSegmentLayout\}/, '兜底分支里的测量行没有挂测量回调')
+})
+
 test('逐字进度改用本地时钟 + 段边界定时器，不再按固定间隔轮询位置', () => {
   const hook = read('./hooks/useWordLyricProgress.ts')
   // 位置只在 play / pause / seek / 换行时读一次（对应桌面版 core/lyric.ts 的 getCurrentTime）
