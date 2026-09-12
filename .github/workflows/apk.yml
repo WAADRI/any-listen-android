@@ -1,18 +1,31 @@
 name: Build APK
 
-# 上游自带的 release.yml / beta-pack.yml 只在 master / beta 上触发，且会引用
-# KEYSTORE_* secrets —— 本 fork 没有这些 secrets，base64 解码空字符串会写出一个
-# 名叫 app/ 的垃圾文件并让构建失败。所以这里用一份不依赖任何 secret 的构建流程。
+# 本仓库唯一的流水线。
+#
+# 上游自带的 release.yml / beta-pack.yml / build-test.yml / publish-version-info.yml
+# 已删除：它们指向 lx-music-mobile 的发布流程（master 打 tag、发 Release、发 npm 信息），
+# 且引用上游的 KEYSTORE_* secrets。`beta-pack.yml` 还会在**每次 push 到 beta** 时触发，
+# 而 beta 是本仓库的默认分支 —— 留着它只会让每次合入都红一片。
 on:
   push:
     branches:
       - 'feat/**'
       - 'fix/**'
       - main
+      # beta 是默认分支：合入后必须照样跑测试与打包
+      - beta
+    # 打 v* 标签时额外把 APK 挂到 Release 上（见最后一步）
+    tags:
+      - 'v*'
   pull_request:
     branches:
       - main
+      - beta
   workflow_dispatch:
+
+# 打标签时要创建 Release，需要写权限（默认可能是只读）
+permissions:
+  contents: write
 
 jobs:
   # 协议层的单测。单独一个 job 且不装依赖，因此只要几秒就能给出反馈 ——
@@ -40,6 +53,10 @@ jobs:
     name: Build universal APK
     runs-on: ubuntu-latest
     needs: unit-test
+    env:
+      # secrets 不能直接用在 step 的 if 条件里，先落到 env 再判断。
+      # 没配密钥库时（例如别人 fork 这个仓库）会自动退回 debug 签名继续可装。
+      KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
     steps:
       - name: Check out git repository
         uses: actions/checkout@v4
@@ -60,6 +77,25 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Set up release signing
+        if: env.KEYSTORE_BASE64 != ''
+        shell: bash
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          # 用 printf（而不是 heredoc）写 properties：密码里的 $ 或反引号不会被 shell 展开。
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$GITHUB_WORKSPACE/android/app/anylisten-release.p12"
+          {
+            printf 'storeFile=%s\n' "$GITHUB_WORKSPACE/android/app/anylisten-release.p12"
+            printf 'storePassword=%s\n' "$KEYSTORE_PASSWORD"
+            printf 'keyAlias=%s\n' "$KEY_ALIAS"
+            printf 'keyPassword=%s\n' "$KEY_PASSWORD"
+            printf 'storeType=PKCS12\n'
+          } > "$GITHUB_WORKSPACE/android/keystore.properties"
+          echo "已配置发布签名（别名 $KEY_ALIAS，PKCS#12）"
+
       - name: Build release APK
         env:
           # 上游的构建流程都设了这个开关，保持一致。
@@ -67,8 +103,8 @@ jobs:
         shell: bash
         run: |
           cd android
-          # 不加任何 -PMYAPP_* 参数：此时 app/build.gradle 会回落到 debug 签名，
-          # 产出可安装的 APK。正式分发需要自己的 keystore，见 README。
+          # 上一步写了 keystore.properties 时，app/build.gradle 会用它做 release 签名；
+          # 没写（没有 secrets）时回落到 debug 签名，仍然产出可安装的 APK。
           ./gradlew assembleRelease --no-daemon
 
       - name: Show produced APKs
@@ -76,10 +112,45 @@ jobs:
         run: |
           ls -la android/app/build/outputs/apk/release/ || true
 
+      - name: Verify APK signing certificate
+        if: env.KEYSTORE_BASE64 != ''
+        shell: bash
+        run: |
+          # 发布证书的 SHA-256 指纹（公开信息，不是秘密）。
+          # 这条断言防的是「因为某个失误又用回 debug 签名」——那样 APK 装不上去，
+          # 而错误只在用户安装时才暴露（INSTALL_FAILED_UPDATE_INCOMPATIBLE）。
+          EXPECTED=0351be68572de97be15b905693c6b3d507961d77503bcb0ed0442536a1b7b6f0
+          APKSIGNER=$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}/build-tools" -name apksigner | sort -V | tail -1)
+          APK=$(ls android/app/build/outputs/apk/release/*universal*.apk)
+          echo "校验 $APK"
+          FPS=$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/.*SHA-256 digest: //p' | tr -d ':' | tr 'A-F' 'a-f' | sort -u)
+          echo "APK 签名证书 SHA-256：$FPS"
+          if [ "$FPS" != "$EXPECTED" ]; then
+            echo "✗ APK 不是用发布密钥签名的（期望 $EXPECTED）"
+            exit 1
+          fi
+          echo "✓ 签名证书与发布密钥一致"
+
       - name: Upload universal APK
         uses: actions/upload-artifact@v4
         with:
-          name: anylisten-lx-universal-apk
+          name: anylisten-android-universal-apk
           path: android/app/build/outputs/apk/release/*universal*.apk
           if-no-files-found: error
           retention-days: 30
+
+      - name: Attach APK to the GitHub release
+        # 只有推 v* 标签时才发 Release；Release 附件不会像 artifact 那样过期。
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          APK=$(ls android/app/build/outputs/apk/release/*universal*.apk)
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$APK" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$APK" \
+              --title "any-listen-android $GITHUB_REF_NAME" \
+              --notes-file .github/release-notes.md
+          fi

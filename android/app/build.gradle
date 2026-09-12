@@ -145,6 +145,7 @@ android {
                     storePassword MYAPP_UPLOAD_STORE_PASSWORD
                     keyAlias MYAPP_UPLOAD_KEY_ALIAS
                     keyPassword MYAPP_UPLOAD_KEY_PASSWORD
+                    if (project.hasProperty('MYAPP_UPLOAD_STORE_TYPE')) storeType MYAPP_UPLOAD_STORE_TYPE
                 } else {
                     def keystoreProperties = new Properties()
                     keystoreProperties.load(new FileInputStream(rootProject.file("keystore.properties")))
@@ -153,6 +154,10 @@ android {
                     storePassword keystoreProperties['storePassword']
                     keyAlias keystoreProperties['keyAlias']
                     keyPassword keystoreProperties['keyPassword']
+                    // 密钥库类型。必须能显式指定：Gradle 默认按 JKS 读，
+                    // 而 CI 的发布密钥库是 PKCS#12（没有 java/keytool 的机器上只能用
+                    // node-forge 生成 PKCS#12），不写这一行会报 "Invalid keystore format"。
+                    storeType keystoreProperties['storeType'] ?: 'JKS'
                 }
             }
         }

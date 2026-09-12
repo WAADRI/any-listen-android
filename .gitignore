@@ -45,6 +45,9 @@ buck-out/
 *.keystore
 !debug.keystore
 
+# 发布签名密钥库（PKCS#12）。CI 从 GitHub secrets 还原到工作区，绝不入库。
+*.p12
+
 # fastlane
 #
 # It is recommended to not store the screenshots in the git repo. Instead, use fastlane to re-generate the
