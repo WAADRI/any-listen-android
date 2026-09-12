@@ -45,7 +45,12 @@ import { View } from 'react-native'
 
 import Input from '@/components/common/Input'
 import Text from '@/components/common/Text'
-import Button from '@/components/common/Button'
+// 用设置页自己的 Button（`Setting/components/Button`），而不是通用的
+// `@/components/common/Button`：前者自带 `c-button-background` 底色与内边距，
+// 设置页里「导入导出」「清理缓存」等按钮用的都是它。之前这里用了通用 Button，
+// 于是「测试连接 / 保存」是没有底色的裸文字，夹在其它按钮中间显得格格不入。
+// 注意它**自己会把 children 包进 Text**，所以文案直接传字符串即可。
+import Button from '../../components/Button'
 import { createStyle, toast } from '@/utils/tools'
 import { useTheme } from '@/store/theme/hook'
 import { updateSetting } from '@/core/common'
@@ -321,18 +326,13 @@ const ServerSetting = memo(() => {
       </Text>
 
       <View style={styles.actions}>
+        {/* 文案直接传字符串：设置页的 Button 自己会包一层 Text
+            （裸字符串交给通用 Button 会抛
+            "Text strings must be rendered within a <Text> component"）。 */}
         <Button onPress={handleTest} disabled={test.kind === 'testing'}>
-          {/* Button 把 children 直接渲染进 Pressable，裸字符串会抛
-              "Text strings must be rendered within a <Text> component"，
-              所以按钮文案必须自己包 Text（与仓库内其他调用点一致）。 */}
-          <Text color={theme['c-button-font']}>
-            {test.kind === 'testing' ? '测试中…' : '测试连接'}
-          </Text>
+          {test.kind === 'testing' ? '测试中…' : '测试连接'}
         </Button>
-        <View style={styles.gap} />
-        <Button onPress={handleSave}>
-          <Text color={theme['c-button-font']}>保存</Text>
-        </Button>
+        <Button onPress={handleSave}>保存</Button>
       </View>
 
       {steps.length > 0 ? (
@@ -402,9 +402,6 @@ const styles = createStyle({
     alignItems: 'center',
     marginTop: 8,
     marginBottom: 12,
-  },
-  gap: {
-    width: 12,
   },
   result: {
     marginBottom: 12,
