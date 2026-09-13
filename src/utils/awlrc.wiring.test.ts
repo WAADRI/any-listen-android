@@ -116,6 +116,11 @@ test('逐字进度改用本地时钟 + 段边界定时器，不再按固定间�
   assert.match(hook, /wordLyricClock/, '没有使用本地时钟')
   assert.match(hook, /global\.app_event\.on\('setProgress'/, '拖进度条/恢复进度时逐字不会重新对齐')
   assert.match(hook, /AppState\.currentState === 'background'/, '后台时仍在排定时器')
+  // 扫光必须与「行切换」用同一个歌词偏移，否则会比桌面歌词慢一个字（真机反馈）
+  assert.match(hook, /lyricOffset/, '扫光没有加行切换用的歌词偏移')
+  assert.match(hook, /positionAt\(now\) \+ lyricOffset - lineTimeMs/, '偏移没有加在「相对本行」的计时上')
+  assert.match(read('../plugins/lyric.ts'), /offset: lyricOffset/, '行切换的偏移与扫光的偏移不是同一个常量')
+  assert.ok(!/positionAt\(Date\.now\(\)\) - line\.timeMs/.test(read('../screens/PlayDetail/components/WordLyricLine.tsx')), '扫光组件仍在用没有偏移的计时')
   // 关键在于「只在段开始时醒一次」：任何固定间隔轮询都会把效果量化成网格并造成掉帧
   assert.ok(!/setInterval/.test(hook), '逐字进度又回到固定间隔轮询了（上一版就是因此生硬卡顿）')
   assert.ok(!/setInterval/.test(read('../screens/PlayDetail/components/WordLyricLine.tsx')), '扫光层又回到固定间隔轮询了')
