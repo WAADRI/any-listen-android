@@ -72,7 +72,15 @@ export const useWordLyricProgress = (line: AwlrcLine | undefined): WordLyricProg
     wordLyricClock.setPlay(false, Date.now())
     resync()
 
-    const handleSetProgress = () => {
+    const handleSetProgress = (time?: number) => {
+      // 拖动进度条时**不要**去读播放位置：seek 是异步的，读回来常常还是旧位置，
+      // 扫光就会停在拖之前那一格（真机反馈：往前拖不补、往回拖不退）。
+      // 事件里带的才是目标位置（单位是秒）。
+      if (typeof time === 'number' && time >= 0) {
+        wordLyricClock.setPlay(isPlay, Date.now(), time * 1000)
+        setResyncVersion(version => version + 1)
+        return
+      }
       resync()
     }
     // 拖进度条、跳到某一行、恢复播放进度都会发这个事件

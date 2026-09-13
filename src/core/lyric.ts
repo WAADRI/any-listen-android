@@ -69,6 +69,21 @@ export const stop = () => {
 }
 
 /**
+ * 拖动进度条 / 跳到某一行：把歌词与桌面歌词**重新对齐**到新位置。
+ *
+ * 上游只把位置写进播放器就算完，歌词插件与桌面歌词窗口的时钟都还停在旧位置——
+ * 逐字扫光因此不会跟着走（往前拖不会补上、往回拖也不会退掉，真机反馈）。
+ * 对齐之后如果本来是暂停状态，再把两边的时钟冻住（`play()` 会把它们置成播放中）。
+ */
+export const seek = (time: number) => {
+  handlePlay(time * 1000)
+  if (!playerState.isPlay) {
+    lrcPause()
+    void pauseDesktopLyric()
+  }
+}
+
+/**
  * set playback rate
  * @param playbackRate playback rate
  */

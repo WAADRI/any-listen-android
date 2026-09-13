@@ -1,4 +1,4 @@
-import { init as initLyricPlayer, toggleTranslation, toggleRoma, play, pause, stop, setLyric, setPlaybackRate } from '@/core/lyric'
+import { init as initLyricPlayer, toggleTranslation, toggleRoma, play, pause, stop, setLyric, setPlaybackRate, seek } from '@/core/lyric'
 import { updateSetting } from '@/core/common'
 import { onDesktopLyricPositionChange, showDesktopLyric, onLyricLinePlay, showRemoteLyric } from '@/core/desktopLyric'
 import playerState from '@/store/player/state'
@@ -61,4 +61,6 @@ export default async(setting: LX.AppSetting) => {
   global.app_event.on('error', pause)
   global.app_event.on('musicToggled', stop)
   global.app_event.on('lyricUpdated', setLyric)
+  // 拖进度条、点某一行跳转：歌词（行与逐字扫光）必须跟着重新对齐（时间是秒）
+  global.app_event.on('setProgress', seek)
 }
