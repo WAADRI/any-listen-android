@@ -3,7 +3,7 @@ import { Animated, AppState, Easing, StyleSheet, View, type ColorValue, type Lay
 import Text from '@/components/common/Text'
 import { type AwlrcLine, type AwlrcSegment } from '@/utils/awlrc'
 import { nextBoundaryAt, sweepXAt } from '@/utils/awlrcPlayer'
-import { useWordLyricProgress, wordLyricClock } from '@/utils/hooks/useWordLyricProgress'
+import { elapsedInLine, useWordLyricProgress, wordLyricClock } from '@/utils/hooks/useWordLyricProgress'
 
 /**
  * 播放页当前行的逐字歌词（卡拉OK 扫光）。
@@ -119,7 +119,7 @@ const WordLyricLine = memo(({ line, size, lineHeight, textAlign, playedColor, un
 
     const step = () => {
       if (isUnmounted) return
-      const elapsed = wordLyricClock.positionAt(Date.now()) - line.timeMs
+      const elapsed = elapsedInLine(line.timeMs)
       // 当前正在唱的那一段（-1 表示还没开始，或落在两段之间的空隙里）
       let index = -1
       for (let i = 0; i < segments.length; i++) {

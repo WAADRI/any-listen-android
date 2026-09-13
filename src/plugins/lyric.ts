@@ -9,6 +9,16 @@ type SetAwlrcHook = (awlrc: Awlrc) => void
 
 export const emptyAwlrc: Awlrc = { lines: [], byTime: new Map(), hasWordTiming: false }
 
+/**
+ * 歌词偏移（毫秒），交给 `lrc-file-parser`：它让**行**比原始时间戳提前这么多切换。
+ *
+ * 逐字扫光必须加同一个偏移（见 `utils/hooks/useWordLyricProgress.ts` 的
+ * `elapsedInLine`），否则扫光会比行切换慢——真机上表现为「播放页的扫光比桌面歌词慢一个字」。
+ * 桌面歌词窗口在 Java 侧有自己的偏移（`LyricPlayer.offset = 150`），两边各自保证
+ * 「行切换与扫光用同一个偏移」即可，剩下的 50ms 差看不出来。
+ */
+export const lyricOffset = 100
+
 const lrcTools = {
   isInited: false,
   lrc: null as Lyric | null,
@@ -31,7 +41,7 @@ const lrcTools = {
     this.lrc = new Lyric({
       onPlay: this.onPlay.bind(this),
       onSetLyric: this.onSetLyric.bind(this),
-      offset: 100, // offset time(ms), default is 150 ms
+      offset: lyricOffset, // offset time(ms), default is 150 ms
     })
   },
   onPlay(line: number, text: string) {

@@ -4,6 +4,7 @@ import { getPosition } from '@/plugins/player'
 import { useIsPlay } from '@/store/player/hook'
 import { playedCount, type AwlrcLine } from '@/utils/awlrc'
 import { AwlrcClock, nextBoundaryAt } from '@/utils/awlrcPlayer'
+import { lyricOffset } from '@/plugins/lyric'
 
 /**
  * 逐字歌词的全局时钟。
@@ -17,6 +18,17 @@ import { AwlrcClock, nextBoundaryAt } from '@/utils/awlrcPlayer'
  * 并把 `resyncVersion` 放进 effect 依赖里，重新锚定时重画。
  */
 export const wordLyricClock = new AwlrcClock()
+
+/**
+ * 相对本行起始已经唱了多久（毫秒）。
+ *
+ * **必须加上行切换用的那个歌词偏移**（`plugins/lyric.ts` 的 `lyricOffset`）：
+ * `lrc-file-parser` 用 `offset` 让「行」提前切换，而逐字段的时间戳是原始时间；
+ * 少加这 100ms，扫光就比行切换（以及桌面歌词窗口）慢一截
+ * ——真机反馈正是「播放页的扫光比桌面歌词慢一个字」。
+ */
+export const elapsedInLine = (lineTimeMs: number, now = Date.now()) =>
+  wordLyricClock.positionAt(now) + lyricOffset - lineTimeMs
 
 export interface WordLyricProgress {
   /** 已唱完的段数（逐个换色的兜底渲染、底栏用） */
@@ -91,7 +103,7 @@ export const useWordLyricProgress = (line: AwlrcLine | undefined): WordLyricProg
 
     const step = () => {
       if (isUnmounted) return
-      const elapsed = wordLyricClock.positionAt(Date.now()) - lineTimeMs
+      const elapsed = elapsedInLine(lineTimeMs)
       setPlayed(playedCount(segments, elapsed))
 
       const next = nextBoundaryAt(segments, elapsed)
