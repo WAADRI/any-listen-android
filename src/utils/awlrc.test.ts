@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { parseAwlrc, parseTimeLabel, playedCount, findAwlrcLine, awlrcOf, lineStyleKind } from './awlrc'
+import { parseAwlrc, parseTimeLabel, playedCount, findAwlrcLine, awlrcOf, lineOrderKind, lineStyleKind } from './awlrc'
 
 // 下面这段是**服务端真实返回**的 awlyric（`tools/ws-dump-awlrc.mjs` 原样 dump，
 // 曲目：2026一定会幸福 (女声版) - 諾然）。断言值全部按这段真实数据写死，
@@ -146,6 +146,16 @@ test('lineStyleKind：当前行扫光、唱过的行保持已唱色、之后的�
   assert.equal(lineStyleKind(2, 3, false), 'idle')
   // 还没开始唱（当前行是 -1）时全都是普通行
   assert.equal(lineStyleKind(0, -1, true), 'idle')
+})
+
+test('lineOrderKind：往回拖/往前拖都要能看出「分类变了」', () => {
+  assert.equal(lineOrderKind(5, 5), 1)
+  assert.equal(lineOrderKind(5, 9), 2)
+  assert.equal(lineOrderKind(5, 2), 0)
+  // 往回拖：原本「已唱」的行（2）变成「未唱」（0），必须不等
+  assert.notEqual(lineOrderKind(9, 20), lineOrderKind(9, 5))
+  // 往前拖：原本「未唱」的行（0）变成「已唱」（2），同样必须不等
+  assert.notEqual(lineOrderKind(9, 5), lineOrderKind(9, 20))
 })
 
 test('awlrcOf 只在字段确实是字符串时取值', () => {
