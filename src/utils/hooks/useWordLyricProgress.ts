@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { AppState } from 'react-native'
 import { getPosition } from '@/plugins/player'
 import { useIsPlay } from '@/store/player/hook'
+import playerState from '@/store/player/state'
 import { playedCount, type AwlrcLine } from '@/utils/awlrc'
 import { AwlrcClock, nextBoundaryAt } from '@/utils/awlrcPlayer'
 import { lyricOffset } from '@/plugins/lyric'
@@ -36,6 +37,9 @@ export interface WordLyricProgress {
   /** 每次重新锚定自增；自己驱动动画的消费方用它当 effect 依赖 */
   resyncVersion: number
 }
+
+const VERIFY_INTERVAL = 1000
+const VERIFY_TOLERANCE = 300
 
 const readPosition = async(): Promise<number | null> => {
   try {
@@ -128,6 +132,25 @@ export const useWordLyricProgress = (line: AwlrcLine | undefined): WordLyricProg
       if (timer) clearTimeout(timer)
     }
   }, [line, resyncVersion, isPlay])
+
+  // 兜底校准：每秒用播放器真实位置核对一次本地时钟，偏差超过 300ms 就重新锚定。
+  // 上面的 setProgress / play / pause 都是「别人通知我」，只要有一条路径没通知到
+  // （拖动进度条就是这么报上来的），扫光就会一直停在旧位置。注意分工：**动画仍由段边界
+  // 定时器驱动**，这里只做一次数值相减，没偏差就不重渲染。
+  useEffect(() => {
+    const lineTimeMs = line?.timeMs
+    if (!line?.segments.length || lineTimeMs == null) return
+    const timer = setInterval(() => {
+      if (!playerState.isPlay || AppState.currentState === 'background') return
+      void readPosition().then((position) => {
+        if (position == null) return
+        if (Math.abs(wordLyricClock.positionAt(Date.now()) - position) < VERIFY_TOLERANCE) return
+        wordLyricClock.setPlay(true, Date.now(), position)
+        setResyncVersion(version => version + 1)
+      })
+    }, VERIFY_INTERVAL)
+    return () => { clearInterval(timer) }
+  }, [line])
 
   return { played, resyncVersion }
 }

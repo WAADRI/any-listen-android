@@ -127,6 +127,10 @@ test('逐字进度改用本地时钟 + 段边界定时器，不再按固定间�
   assert.match(read('../core/lyric.ts'), /export const seek = \(time: number\)/, '缺少 seek：歌词与桌面歌词不会跟着进度条走')
   assert.ok(!/positionAt\(Date\.now\(\)\) - line\.timeMs/.test(read('../screens/PlayDetail/components/WordLyricLine.tsx')), '扫光组件仍在用没有偏移的计时')
   // 关键在于「只在段开始时醒一次」：任何固定间隔轮询都会把效果量化成网格并造成掉帧
-  assert.ok(!/setInterval/.test(hook), '逐字进度又回到固定间隔轮询了（上一版就是因此生硬卡顿）')
+  // 允许**且仅允许**一个 1 秒的兜底校准（只做数值相减、无偏差不重渲染）；
+  // 驱动动画的固定间隔轮询仍然禁止（上一版就是因此生硬卡顿）
+  assert.match(hook, /VERIFY_INTERVAL = 1000/, '缺少兜底校准：拖动进度条这类「没人通知」的位置跳变会让扫光停在旧位置')
+  assert.match(hook, /VERIFY_TOLERANCE/, '兜底校准没有容差，会与本地时钟互相打架')
+  assert.ok(!/setInterval\([^,]+,\s*(?!VERIFY_INTERVAL)\d+\)/.test(hook), '又出现了第二个固定间隔轮询')
   assert.ok(!/setInterval/.test(read('../screens/PlayDetail/components/WordLyricLine.tsx')), '扫光层又回到固定间隔轮询了')
 })
