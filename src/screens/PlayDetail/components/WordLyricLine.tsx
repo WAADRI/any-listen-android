@@ -1,7 +1,8 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
-import { Animated, AppState, Easing, StyleSheet, View, type ColorValue, type LayoutChangeEvent, type TextStyle } from 'react-native'
+import { Animated, AppState, Easing, StyleSheet, View, InteractionManager, type ColorValue, type LayoutChangeEvent, type TextStyle } from 'react-native'
 import Text from '@/components/common/Text'
 import { type AwlrcLine, type AwlrcSegment } from '@/utils/awlrc'
+import { getPosition } from '@/plugins/player'
 import { nextBoundaryAt, sweepXAt } from '@/utils/awlrcPlayer'
 import { elapsedInLine, useWordLyricProgress, wordLyricClock } from '@/utils/hooks/useWordLyricProgress'
 
@@ -150,11 +151,25 @@ const WordLyricLine = memo(({ line, size, lineHeight, textAlign, playedColor, un
       if (AppState.currentState === 'background') return
       timer = setTimeout(step, Math.max(16, (next - elapsed) / wordLyricClock.rate))
     }
+    // 兜底对齐（250ms 一次）：拖动进度条这类位置跳变，不依赖任何事件/state——
+    // 直接读本机播放位置，偏差超过 100ms 就重新给时钟起表并立刻把扫光摆过去。
+    // 只做「读位置 + 必要时 setValue/重开动画」，不触发 React 重渲染。
+    const verify = setInterval(() => {
+      if (isUnmounted || AppState.currentState === 'background' || !wordLyricClock.isPlay) return
+      void getPosition().then((position) => {
+        if (isUnmounted || typeof position !== 'number' || position < 0) return
+        const positionMs = position * 1000
+        if (Math.abs(wordLyricClock.positionAt(Date.now()) - positionMs) < 100) return
+        wordLyricClock.setPlay(true, Date.now(), positionMs)
+        step()
+      }).catch(() => {})
+    }, 250)
     step()
 
     return () => {
       isUnmounted = true
       if (timer) clearTimeout(timer)
+      clearInterval(verify)
       clipWidth.stopAnimation()
     }
   }, [canSweep, ends, segments, line.timeMs, resyncVersion, clipWidth])
