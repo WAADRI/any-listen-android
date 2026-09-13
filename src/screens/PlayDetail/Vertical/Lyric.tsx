@@ -10,7 +10,7 @@ import { AnimatedColorText } from '@/components/common/Text'
 import { setSpText } from '@/utils/pixelRatio'
 import playerState from '@/store/player/state'
 import { scrollTo } from '@/utils/scroll'
-import { findAwlrcLine, lineStyleKind, type Awlrc } from '@/utils/awlrc'
+import { findAwlrcLine, lineOrderKind, lineStyleKind, type Awlrc } from '@/utils/awlrc'
 import WordLyricLine from '../components/WordLyricLine'
 import PlayLine, { type PlayLineType } from '../components/PlayLine'
 // import { screenkeepAwake } from '@/utils/nativeModules/utils'
@@ -128,10 +128,10 @@ const LrcLine = memo(({ line, lineNum, activeLine, awlrc, onLayout }: LineProps)
   )
 }, (prevProps, nextProps) => {
   if (prevProps.line !== nextProps.line || prevProps.awlrc !== nextProps.awlrc) return false
-  // 焦点变化必须重渲染，否则会留着另一套配色（已唱色 / 未唱色）
-  if ((prevProps.activeLine == prevProps.lineNum) !== (nextProps.activeLine == nextProps.lineNum)) return false
-  // 其余情况不用跟着父组件重画：逐字进度与扫光都在 WordLyricLine 里自己推进
-  return true
+  // 「未唱 / 当前行 / 已唱」的分类变了就必须重画：往回拖进度条时原本已唱的行要变回未唱，
+  // 往前拖时跳过的行要补上。这类行既不是当前行、也没换行换歌，只看「是不是当前行」会漏掉
+  // （真机反馈：拖回去之后已扫满的行不会退掉，往前拖跳过的行也不会补上）
+  return lineOrderKind(prevProps.lineNum, prevProps.activeLine) === lineOrderKind(nextProps.lineNum, nextProps.activeLine)
 })
 const wait = async() => new Promise(resolve => setTimeout(resolve, 100))
 

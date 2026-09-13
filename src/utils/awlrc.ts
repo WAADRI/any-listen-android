@@ -197,6 +197,17 @@ export function playedCount(segments: readonly AwlrcSegment[], elapsedMs: number
 }
 
 /**
+ * 一行的分类（0=还没唱到、1=当前行、2=已经唱过），按**行号与当前行的关系**判定。
+ *
+ * 给 memo 比较用：滑动的行列表里，行的**分类变化**必须触发重画——往回拖进度条时，
+ * 原本「已唱」的行要变回「未唱」，而它既不是当前行、也没换行、更没换歌，
+ * 只比较「是不是当前行」会漏掉这类变化（真机反馈：拖回去之后已扫满的行不会退掉，
+ * 往前拖时跳过的行也不会补上）。
+ */
+export const lineOrderKind = (lineNum: number, activeLine: number): 0 | 1 | 2 =>
+  activeLine === lineNum ? 1 : activeLine > lineNum ? 2 : 0
+
+/**
  * 这一行该怎么上色。
  *
  * - `active`：当前正在唱的行 —— 逐字扫光；
