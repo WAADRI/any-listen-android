@@ -1,7 +1,7 @@
 {
   "name": "lx-music-mobile",
-  "version": "1.9.0-anylisten.12",
-  "versionCode": 88,
+  "version": "1.9.0-anylisten.13",
+  "versionCode": 89,
   "private": true,
   "scripts": {
     "dev": "react-native run-android --active-arch-only",
