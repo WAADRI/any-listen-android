@@ -66,11 +66,14 @@ export const useWordLyricProgress = (line: AwlrcLine | undefined): WordLyricProg
   // (几毫秒)会再校正一次，看不出来。
   const prevLineRef = useRef<AwlrcLine | undefined>(undefined)
 
+  // ⚠️ 换行的锚定必须在**渲染期间**同步做：放在 effect 里的话，新行的第一帧仍会拿上一行的锚点
+  // 去算，于是先飞快扫一下、再归零从头扫（真机反馈的「抽搐」）。这里是幂等赋值，无副作用风险。
+  if (prevLineRef.current !== line) {
+    prevLineRef.current = line
+    if (line) wordLyricClock.setPlay(false, Date.now(), line.timeMs - lyricOffset)
+  }
+
   useEffect(() => {
-    if (prevLineRef.current !== line) {
-      prevLineRef.current = line
-      if (line) wordLyricClock.setPlay(false, Date.now(), line.timeMs - lyricOffset)
-    }
     let isUnmounted = false
     const resync = () => {
       void readPosition().then((position) => {
