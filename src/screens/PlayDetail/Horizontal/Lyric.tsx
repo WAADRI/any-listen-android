@@ -6,7 +6,7 @@ import { createStyle } from '@/utils/tools'
 // import { useComponentIds } from '@/store/common/hook'
 import { useTheme } from '@/store/theme/hook'
 import { useSettingValue } from '@/store/setting/hook'
-import { AnimatedColorText } from '@/components/common/Text'
+import Text, { AnimatedColorText } from '@/components/common/Text'
 import { setSpText } from '@/utils/pixelRatio'
 import playerState from '@/store/player/state'
 import { scrollTo } from '@/utils/scroll'
@@ -69,11 +69,13 @@ const LrcLine = memo(({ line, lineNum, activeLine, awlrc, onLayout }: LineProps)
             playedColor={theme['c-primary']}
             unplayColor={theme['c-250']}
           />
-          : <AnimatedColorText style={{
+          // 直接用普通 Text 换色，不要 `AnimatedColorText` 的渐变过渡（要求：重画时直接变颜色）
+          : <Text style={{
             ...styles.lineText,
             textAlign,
             lineHeight,
-          }} textBreakStrategy="simple" color={colors[0]} opacity={colors[2]} size={size}>{line.text}</AnimatedColorText>
+            opacity: colors[2],
+          }} textBreakStrategy="simple" color={colors[0]} size={size}>{line.text}</Text>
       }
       {
         line.extendedLyrics.map((lrc, index) => {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AppState } from 'react-native'
 import { getPosition } from '@/plugins/player'
 import { useIsPlay } from '@/store/player/hook'
@@ -61,7 +61,16 @@ export const useWordLyricProgress = (line: AwlrcLine | undefined): WordLyricProg
   const [resyncVersion, setResyncVersion] = useState(0)
 
   // 重新锚定：换行、播放/暂停切换、拖动进度条、回到前台，都用本机播放位置校准一次
+  // 换行瞬间必须先把时钟锚到「这一行的起点」，否则在异步读到播放位置之前，扫光会拿上一行的
+  // 锚点去算：表现就是新行「先飞快扫一下、再从头开始扫」（真机反馈）。等真实位置读回来
+  // (几毫秒)会再校正一次，看不出来。
+  const prevLineRef = useRef<AwlrcLine | undefined>(undefined)
+
   useEffect(() => {
+    if (prevLineRef.current !== line) {
+      prevLineRef.current = line
+      if (line) wordLyricClock.setPlay(false, Date.now(), line.timeMs - lyricOffset)
+    }
     let isUnmounted = false
     const resync = () => {
       void readPosition().then((position) => {
