@@ -4,7 +4,7 @@ import { getPosition } from '@/plugins/player'
 import { useIsPlay } from '@/store/player/hook'
 import playerState from '@/store/player/state'
 import { playedCount, type AwlrcLine } from '@/utils/awlrc'
-import { AwlrcClock, lineEndAt, nextBoundaryAt } from '@/utils/awlrcPlayer'
+import { AwlrcClock, nextBoundaryAt } from '@/utils/awlrcPlayer'
 import { lyricOffset } from '@/plugins/lyric'
 
 /**
@@ -34,8 +34,6 @@ export const elapsedInLine = (lineTimeMs: number, now = Date.now()) =>
 export interface WordLyricProgress {
   /** 已唱完的段数（逐个换色的兜底渲染、底栏用） */
   played: number
-  /** 整行是否已经**唱完**（最后一段也扫完了）——翻译/罗马音要等这时候才淡入 */
-  isFinished: boolean
   /** 每次重新锚定自增；自己驱动动画的消费方用它当 effect 依赖 */
   resyncVersion: number
 }
@@ -60,7 +58,6 @@ const readPosition = async(): Promise<number | null> => {
 export const useWordLyricProgress = (line: AwlrcLine | undefined): WordLyricProgress => {
   const isPlay = useIsPlay()
   const [played, setPlayed] = useState(0)
-  const [isFinished, setIsFinished] = useState(false)
   const [resyncVersion, setResyncVersion] = useState(0)
 
   // 重新锚定：换行、播放/暂停切换、拖动进度条、回到前台，都用本机播放位置校准一次
@@ -69,14 +66,11 @@ export const useWordLyricProgress = (line: AwlrcLine | undefined): WordLyricProg
   // (几毫秒)会再校正一次，看不出来。
   const prevLineRef = useRef<AwlrcLine | undefined>(undefined)
 
-  // ⚠️ 换行的锚定必须在**渲染期间**同步做：放到 effect 里的话，新行的第一帧仍会用上一行的
-  // 锚点算，于是先飞快扫一下、再归零从头扫（真机反馈的「抽搐」）。这里是幂等的赋值。
-  if (prevLineRef.current !== line) {
-    prevLineRef.current = line
-    if (line) wordLyricClock.setPlay(false, Date.now(), line.timeMs - lyricOffset)
-  }
-
   useEffect(() => {
+    if (prevLineRef.current !== line) {
+      prevLineRef.current = line
+      if (line) wordLyricClock.setPlay(false, Date.now(), line.timeMs - lyricOffset)
+    }
     let isUnmounted = false
     const resync = () => {
       void readPosition().then((position) => {
@@ -120,7 +114,6 @@ export const useWordLyricProgress = (line: AwlrcLine | undefined): WordLyricProg
   useEffect(() => {
     const segments = line?.segments
     const lineTimeMs = line?.timeMs
-    setIsFinished(false)
     if (!segments?.length || lineTimeMs == null) {
       setPlayed(0)
       return
@@ -135,18 +128,7 @@ export const useWordLyricProgress = (line: AwlrcLine | undefined): WordLyricProg
       setPlayed(playedCount(segments, elapsed))
 
       const next = nextBoundaryAt(segments, elapsed)
-      if (next == null) {
-        // 已经没有下一段的起点了：再等「这一行唱完」那一刻醒一次，通知外面翻译/罗马音可以淡入
-        const end = lineEndAt(segments)
-        if (elapsed >= end) {
-          setIsFinished(true)
-          return
-        }
-        if (!wordLyricClock.isPlay || AppState.currentState === 'background') return
-        timer = setTimeout(step, Math.max(16, (end - elapsed) / wordLyricClock.rate))
-        return
-      }
-      if (!wordLyricClock.isPlay) return
+      if (next == null || !wordLyricClock.isPlay) return
       // 后台时这一层没人看，别再唤醒自己；回到前台会重新锚定并重跑本 effect
       if (AppState.currentState === 'background') return
       const delay = (next - elapsed) / wordLyricClock.rate
@@ -179,7 +161,7 @@ export const useWordLyricProgress = (line: AwlrcLine | undefined): WordLyricProg
     return () => { clearInterval(timer) }
   }, [line])
 
-  return { played, isFinished, resyncVersion }
+  return { played, resyncVersion }
 }
 
 export default useWordLyricProgress
