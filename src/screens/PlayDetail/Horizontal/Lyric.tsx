@@ -1,4 +1,4 @@
-import { memo, useMemo, useEffect, useRef, useCallback } from 'react'
+import { memo, useMemo, useEffect, useRef, useCallback, useState } from 'react'
 import { View, FlatList, type FlatListProps, type NativeSyntheticEvent, type NativeScrollEvent, type LayoutChangeEvent } from 'react-native'
 // import { useLayout } from '@/utils/hooks'
 import { type Line, useAwlrc, useLrcPlay, useLrcSet } from '@/plugins/lyric'
@@ -40,6 +40,10 @@ const LrcLine = memo(({ line, lineNum, activeLine, awlrc, onLayout }: LineProps)
     ? findAwlrcLine(awlrc, lineNum, line.time, line.text)
     : undefined
   const kind = lineStyleKind(lineNum, activeLine, !!awlrcLine?.segments.length)
+  // 翻译 / 罗马音与 web、桌面版一致：**等主歌词完全扫光后**才淡入（`AnimatedColorText` 的透明度过渡）
+  const [sweepDone, setSweepDone] = useState(false)
+  useEffect(() => { setSweepDone(false) }, [awlrcLine])
+  const extendedOpacity = (kind === 'active' && awlrcLine?.segments.length && !sweepDone) ? 0 : colors[2]
 
   const colors = useMemo(() => {
     // 当前行与唱过的行**同一套颜色**：桌面版就是这样——靠扫光区分唱到哪，而不是靠明暗。
@@ -68,6 +72,7 @@ const LrcLine = memo(({ line, lineNum, activeLine, awlrc, onLayout }: LineProps)
             textAlign={textAlign}
             playedColor={theme['c-primary']}
             unplayColor={theme['c-250']}
+            onFinished={() => { setSweepDone(true) }}
           />
           // 直接用普通 Text 换色，不要 `AnimatedColorText` 的渐变过渡（要求：重画时直接变颜色）
           : <Text style={{
@@ -83,7 +88,7 @@ const LrcLine = memo(({ line, lineNum, activeLine, awlrc, onLayout }: LineProps)
             ...styles.lineTranslationText,
             textAlign,
             lineHeight: lineHeight * 0.8,
-          }} textBreakStrategy="simple" key={index} color={colors[1]} opacity={colors[2]} size={size * 0.8}>{lrc}</AnimatedColorText>)
+          }} textBreakStrategy="simple" key={index} color={colors[1]} opacity={extendedOpacity} size={size * 0.8}>{lrc}</AnimatedColorText>)
         })
       }
     </View>

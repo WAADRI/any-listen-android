@@ -66,11 +66,21 @@ interface Props {
   playedColor: ColorValue
   /** 未唱色 */
   unplayColor: ColorValue
+  /** 整行**唱完**（最后一段也扫完）时回调一次：翻译/罗马音要等这时候才淡入 */
+  onFinished?: () => void
 }
 
-const WordLyricLine = memo(({ line, size, lineHeight, textAlign, playedColor, unplayColor }: Props) => {
+const WordLyricLine = memo(({ line, size, lineHeight, textAlign, playedColor, unplayColor, onFinished }: Props) => {
   const segments = line.segments
-  const { played, resyncVersion } = useWordLyricProgress(line)
+  const { played, isFinished, resyncVersion } = useWordLyricProgress(line)
+
+  // 唱完通知外面一次（换行时 hook 会把 isFinished 复位）
+  const finishedRef = useRef(false)
+  useEffect(() => {
+    if (!isFinished || finishedRef.current) return
+    finishedRef.current = true
+    onFinished?.()
+  }, [isFinished, onFinished])
   const clipWidth = useRef(new Animated.Value(0)).current
 
   const [box, setBox] = useState({ width: 0, height: 0 })
@@ -82,6 +92,7 @@ const WordLyricLine = memo(({ line, size, lineHeight, textAlign, playedColor, un
   useEffect(() => {
     measured.current = []
     setEnds(null)
+    finishedRef.current = false
   }, [segments])
 
   const handleContainerLayout = (event: LayoutChangeEvent) => {
