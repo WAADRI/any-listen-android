@@ -77,6 +77,8 @@ const WordLyricLine = memo(({ line, size, lineHeight, textAlign, playedColor, un
   /** 每一段末尾的像素位置（相对行首文字起点） */
   const [ends, setEnds] = useState<number[] | null>(null)
   const measured = useRef<number[]>([])
+  /** 刚切到扫光层（还没摆过位置）：第一个动作必须直接摆过去，不能从 0 开始动画 */
+  const firstStepRef = useRef(true)
 
   // 换行/换歌：段变了，之前量到的位置作废
   useEffect(() => {
@@ -131,7 +133,12 @@ const WordLyricLine = memo(({ line, size, lineHeight, textAlign, playedColor, un
       clipWidth.stopAnimation()
       const segment = index >= 0 ? segments[index] : null
       const remaining = segment ? segment.startMs + segment.durationMs - elapsed : 0
-      if (segment && segment.durationMs > 0 && remaining > 0 && wordLyricClock.isPlay) {
+      if (firstStepRef.current) {
+        // 兜底（逐字换色）已经按时间推进过了，切到扫光层时**必须直接摆到当前位置**：
+        // 若从这里开始动画，裁剪宽度会从 0 长起来 —— 看起来就是「先快扫一下、再从头扫一遍」
+        firstStepRef.current = false
+        clipWidth.setValue(sweepXAt(segments, ends, elapsed))
+      } else if (segment && segment.durationMs > 0 && remaining > 0 && wordLyricClock.isPlay) {
         // 还在这段的时长里：线性扫到该段末尾（时长按倍速换算）
         Animated.timing(clipWidth, {
           toValue: ends[index] ?? 0,
