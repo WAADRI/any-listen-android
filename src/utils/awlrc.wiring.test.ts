@@ -118,7 +118,10 @@ test('逐字进度改用本地时钟 + 段边界定时器，不再按固定间�
   assert.match(hook, /AppState\.currentState === 'background'/, '后台时仍在排定时器')
   // 扫光必须与「行切换」用同一个歌词偏移，否则会比桌面歌词慢一个字（真机反馈）
   assert.match(hook, /lyricOffset/, '扫光没有加行切换用的歌词偏移')
-  assert.match(hook, /line\.timeMs - lyricOffset/, '换行时没有把时钟锚到本行起点（会先快扫一下再从头上）')
+  // 反向断言：绝不能人为把时钟锚到「本行起点」。行切换带 100ms 提前量，那一刻真实位置还在本行
+  // 时间戳之前，人为锚定会把时钟摆到真实位置前面 → 先多唱一个字、真实位置读回后再退回 0
+  // （真机「新行开头先快扫一下再从头上」）。正确做法是从落后侧起步、只往前推。
+  assert.ok(!/line\\.timeMs - lyricOffset/.test(hook), '又人为锚定本行起点了：扫光会先前进再后退（抽搐）')
   assert.match(hook, /positionAt\(now\) \+ lyricOffset - lineTimeMs/, '偏移没有加在「相对本行」的计时上')
   assert.match(read('../plugins/lyric.ts'), /offset: lyricOffset/, '行切换的偏移与扫光的偏移不是同一个常量')
   // 拖动进度条：seek 是异步的，读播放位置会拿到旧值，必须用事件里带的秒数

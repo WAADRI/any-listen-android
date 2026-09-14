@@ -64,15 +64,13 @@ export const useWordLyricProgress = (line: AwlrcLine | undefined): WordLyricProg
   // 换行瞬间必须先把时钟锚到「这一行的起点」，否则在异步读到播放位置之前，扫光会拿上一行的
   // 锚点去算：表现就是新行「先飞快扫一下、再从头开始扫」（真机反馈）。等真实位置读回来
   // (几毫秒)会再校正一次，看不出来。
-  const prevLineRef = useRef<AwlrcLine | undefined>(undefined)
-
-  // ⚠️ 换行的锚定必须在**渲染期间**同步做：放在 effect 里的话，新行的第一帧仍会拿上一行的锚点
-  // 去算，于是先飞快扫一下、再归零从头扫（真机反馈的「抽搐」）。这里是幂等赋值，无副作用风险。
-  if (prevLineRef.current !== line) {
-    prevLineRef.current = line
-    if (line) wordLyricClock.setPlay(false, Date.now(), line.timeMs - lyricOffset)
-  }
-
+  // ⚠️ 换行时**不要**人为把时钟锚到「本行起点」。
+  //
+  // 曾经这么做过（.15 在 effect 里、.18 挪到渲染期），真机现象是「新行开头先快扫一下、
+  // 再从头上扫」——因为行切换带 100ms 提前量，切换那一刻**真实位置还在本行时间戳之前**，
+  // 人为锚到起点等于把时钟摆到了真实位置**前面**，于是先多唱一个字；等真实位置读回来，
+  // 扫光又退回 0。正确做法是从**落后的一侧**起步：时钟停在上一行末尾（落后于本行起点），
+  // 由播放器真实位置（resync / 每秒核对）只把它往前推，永远不会回退。
   useEffect(() => {
     let isUnmounted = false
     const resync = () => {
