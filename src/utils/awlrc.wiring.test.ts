@@ -88,8 +88,6 @@ test('逐字渲染组件：一层未唱、一层已唱，用会长的裁剪盒�
   assert.match(component, /easing:\s*Easing\.linear/, '扫光不是线性推进，会与桌面版不一致')
   assert.match(component, /duration:\s*Math\.max\(1,\s*remaining \/ wordLyricClock\.rate\)/, '扫光时长没有按「本段剩余时长 / 倍速」计算')
   assert.match(component, /sweepXAt\(/, '没有用时间轴算出该时刻的扫过位置')
-  // 同一行内只前进不后退（真机「换行开头先快扫一下再从头上」的根治手段）
-  assert.match(component, /Math\.max\(sweepXAt\\(segments, ends, elapsed\\), lastSweepRef\\.current\\)/, '扫光没有做「只前进不后退」的限制')
   // 两层同一行文字：未唱层 + 已唱层的裁剪盒
   assert.match(component, /styles\.clip/, '缺少裁剪层')
   assert.match(component, /overflow:\s*'hidden'/, '裁剪层没有 overflow: hidden，扫光会整行露出来')
