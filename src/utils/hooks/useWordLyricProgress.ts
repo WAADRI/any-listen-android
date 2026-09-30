@@ -1,11 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AppState } from 'react-native'
 import { getPosition } from '@/plugins/player'
 import { useIsPlay } from '@/store/player/hook'
-import playerState from '@/store/player/state'
 import { playedCount, type AwlrcLine } from '@/utils/awlrc'
 import { AwlrcClock, nextBoundaryAt } from '@/utils/awlrcPlayer'
-import { lyricOffset } from '@/plugins/lyric'
 
 /**
  * 逐字歌词的全局时钟。
@@ -20,26 +18,12 @@ import { lyricOffset } from '@/plugins/lyric'
  */
 export const wordLyricClock = new AwlrcClock()
 
-/**
- * 相对本行起始已经唱了多久（毫秒）。
- *
- * **必须加上行切换用的那个歌词偏移**（`plugins/lyric.ts` 的 `lyricOffset`）：
- * `lrc-file-parser` 用 `offset` 让「行」提前切换，而逐字段的时间戳是原始时间；
- * 少加这 100ms，扫光就比行切换（以及桌面歌词窗口）慢一截
- * ——真机反馈正是「播放页的扫光比桌面歌词慢一个字」。
- */
-export const elapsedInLine = (lineTimeMs: number, now = Date.now()) =>
-  wordLyricClock.positionAt(now) + lyricOffset - lineTimeMs
-
 export interface WordLyricProgress {
   /** 已唱完的段数（逐个换色的兜底渲染、底栏用） */
   played: number
   /** 每次重新锚定自增；自己驱动动画的消费方用它当 effect 依赖 */
   resyncVersion: number
 }
-
-const VERIFY_INTERVAL = 1000
-const VERIFY_TOLERANCE = 300
 
 const readPosition = async(): Promise<number | null> => {
   try {
@@ -61,16 +45,6 @@ export const useWordLyricProgress = (line: AwlrcLine | undefined): WordLyricProg
   const [resyncVersion, setResyncVersion] = useState(0)
 
   // 重新锚定：换行、播放/暂停切换、拖动进度条、回到前台，都用本机播放位置校准一次
-  // 换行瞬间必须先把时钟锚到「这一行的起点」，否则在异步读到播放位置之前，扫光会拿上一行的
-  // 锚点去算：表现就是新行「先飞快扫一下、再从头开始扫」（真机反馈）。等真实位置读回来
-  // (几毫秒)会再校正一次，看不出来。
-  // ⚠️ 换行时**不要**人为把时钟锚到「本行起点」。
-  //
-  // 曾经这么做过（.15 在 effect 里、.18 挪到渲染期），真机现象是「新行开头先快扫一下、
-  // 再从头上扫」——因为行切换带 100ms 提前量，切换那一刻**真实位置还在本行时间戳之前**，
-  // 人为锚到起点等于把时钟摆到了真实位置**前面**，于是先多唱一个字；等真实位置读回来，
-  // 扫光又退回 0。正确做法是从**落后的一侧**起步：时钟停在上一行末尾（落后于本行起点），
-  // 由播放器真实位置（resync / 每秒核对）只把它往前推，永远不会回退。
   useEffect(() => {
     let isUnmounted = false
     const resync = () => {
@@ -86,15 +60,7 @@ export const useWordLyricProgress = (line: AwlrcLine | undefined): WordLyricProg
     wordLyricClock.setPlay(false, Date.now())
     resync()
 
-    const handleSetProgress = (time?: number) => {
-      // 拖动进度条时**不要**去读播放位置：seek 是异步的，读回来常常还是旧位置，
-      // 扫光就会停在拖之前那一格（真机反馈：往前拖不补、往回拖不退）。
-      // 事件里带的才是目标位置（单位是秒）。
-      if (typeof time === 'number' && time >= 0) {
-        wordLyricClock.setPlay(isPlay, Date.now(), time * 1000)
-        setResyncVersion(version => version + 1)
-        return
-      }
+    const handleSetProgress = () => {
       resync()
     }
     // 拖进度条、跳到某一行、恢复播放进度都会发这个事件
@@ -125,7 +91,7 @@ export const useWordLyricProgress = (line: AwlrcLine | undefined): WordLyricProg
 
     const step = () => {
       if (isUnmounted) return
-      const elapsed = elapsedInLine(lineTimeMs)
+      const elapsed = wordLyricClock.positionAt(Date.now()) - lineTimeMs
       setPlayed(playedCount(segments, elapsed))
 
       const next = nextBoundaryAt(segments, elapsed)
@@ -142,25 +108,6 @@ export const useWordLyricProgress = (line: AwlrcLine | undefined): WordLyricProg
       if (timer) clearTimeout(timer)
     }
   }, [line, resyncVersion, isPlay])
-
-  // 兜底校准：每秒用播放器真实位置核对一次本地时钟，偏差超过 300ms 就重新锚定。
-  // 上面的 setProgress / play / pause 都是「别人通知我」，只要有一条路径没通知到
-  // （拖动进度条就是这么报上来的），扫光就会一直停在旧位置。注意分工：**动画仍由段边界
-  // 定时器驱动**，这里只做一次数值相减，没偏差就不重渲染。
-  useEffect(() => {
-    const lineTimeMs = line?.timeMs
-    if (!line?.segments.length || lineTimeMs == null) return
-    const timer = setInterval(() => {
-      if (!playerState.isPlay || AppState.currentState === 'background') return
-      void readPosition().then((position) => {
-        if (position == null) return
-        if (Math.abs(wordLyricClock.positionAt(Date.now()) - position) < VERIFY_TOLERANCE) return
-        wordLyricClock.setPlay(true, Date.now(), position)
-        setResyncVersion(version => version + 1)
-      })
-    }, VERIFY_INTERVAL)
-    return () => { clearInterval(timer) }
-  }, [line])
 
   return { played, resyncVersion }
 }

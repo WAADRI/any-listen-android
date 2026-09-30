@@ -162,6 +162,22 @@ public class Lyric extends LyricPlayer {
     setCurrentLyric("", new ArrayList<>(0), null);
   }
 
+  /**
+   * 最后一行的扫光尾部时长 = 本行最后一段结束的时刻。
+   * 匹配规则与 handleGetCurrentLyric 保持一致（行时间匹配、行号兜底、正文一致）。
+   */
+  @Override
+  protected int getWordTailDuration(int lineNum) {
+    if (wordLines.isEmpty() || lineNum < 0 || lineNum >= lines.size()) return 0;
+    HashMap line = (HashMap) lines.get(lineNum);
+    if (line == null) return 0;
+    Object time = line.get("time");
+    WordLyric.Line wordLine = WordLyric.findLine(wordLines, lineNum, time == null ? -1 : (int) time, (String) line.get("text"));
+    if (wordLine == null || wordLine.segments.isEmpty()) return 0;
+    WordLyric.Segment last = wordLine.segments.get(wordLine.segments.size() - 1);
+    return last.start + last.duration;
+  }
+
   public void setSendLyricTextEvent(boolean isSend) {
     if (isSendLyricTextEvent == isSend) return;
     isSendLyricTextEvent = isSend;

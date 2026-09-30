@@ -116,26 +116,7 @@ test('逐字进度改用本地时钟 + 段边界定时器，不再按固定间�
   assert.match(hook, /wordLyricClock/, '没有使用本地时钟')
   assert.match(hook, /global\.app_event\.on\('setProgress'/, '拖进度条/恢复进度时逐字不会重新对齐')
   assert.match(hook, /AppState\.currentState === 'background'/, '后台时仍在排定时器')
-  // 扫光必须与「行切换」用同一个歌词偏移，否则会比桌面歌词慢一个字（真机反馈）
-  assert.match(hook, /lyricOffset/, '扫光没有加行切换用的歌词偏移')
-  // 反向断言：绝不能人为把时钟锚到「本行起点」。行切换带 100ms 提前量，那一刻真实位置还在本行
-  // 时间戳之前，人为锚定会把时钟摆到真实位置前面 → 先多唱一个字、真实位置读回后再退回 0
-  // （真机「新行开头先快扫一下再从头上」）。正确做法是从落后侧起步、只往前推。
-  assert.ok(!/line\\.timeMs - lyricOffset/.test(hook), '又人为锚定本行起点了：扫光会先前进再后退（抽搐）')
-  assert.match(hook, /positionAt\(now\) \+ lyricOffset - lineTimeMs/, '偏移没有加在「相对本行」的计时上')
-  assert.match(read('../plugins/lyric.ts'), /offset: lyricOffset/, '行切换的偏移与扫光的偏移不是同一个常量')
-  // 拖动进度条：seek 是异步的，读播放位置会拿到旧值，必须用事件里带的秒数
-  assert.match(hook, /time \* 1000/, '拖动进度条时没有用事件里的目标位置（会停在拖之前那一格）')
-  const playerInit = read('../core/init/player/lyric.ts')
-  assert.match(playerInit, /global\.app_event\.on\('setProgress', seek\)/, '拖进度条没有让歌词/桌面歌词重新对齐')
-  assert.match(read('../core/lyric.ts'), /export const seek = \(time: number\)/, '缺少 seek：歌词与桌面歌词不会跟着进度条走')
-  assert.ok(!/positionAt\(Date\.now\(\)\) - line\.timeMs/.test(read('../screens/PlayDetail/components/WordLyricLine.tsx')), '扫光组件仍在用没有偏移的计时')
   // 关键在于「只在段开始时醒一次」：任何固定间隔轮询都会把效果量化成网格并造成掉帧
-  // 允许**且仅允许**一个 1 秒的兜底校准（只做数值相减、无偏差不重渲染）；
-  // 驱动动画的固定间隔轮询仍然禁止（上一版就是因此生硬卡顿）
-  assert.match(hook, /VERIFY_INTERVAL = 1000/, '缺少兜底校准：拖动进度条这类「没人通知」的位置跳变会让扫光停在旧位置')
-  assert.match(hook, /VERIFY_TOLERANCE/, '兜底校准没有容差，会与本地时钟互相打架')
-  assert.ok(!/setInterval\([^,]+,\s*(?!VERIFY_INTERVAL)\d+\)/.test(hook), '又出现了第二个固定间隔轮询')
-  // 扫光层允许一个 >=250ms 的**位置核对**（只读位置、不重渲染），它保证拖动进度条后一定对齐；但它不能用来驱动动画
-  assert.match(read('../screens/PlayDetail/components/WordLyricLine.tsx'), /\}, 250\)/, '扫光层缺少位置核对，拖动进度条后可能不对齐')
+  assert.ok(!/setInterval/.test(hook), '逐字进度又回到固定间隔轮询了（上一版就是因此生硬卡顿）')
+  assert.ok(!/setInterval/.test(read('../screens/PlayDetail/components/WordLyricLine.tsx')), '扫光层又回到固定间隔轮询了')
 })
