@@ -522,3 +522,22 @@ test('握手失败时状态为 closed，用于让等待方立刻放弃而不是�
   assert.equal(session.getState(), 'closed')
   session.close()
 })
+/**
+ * 回归：握手阶段网络失败（fetch reject / 挂住）必须继续按退避重试。
+ *
+ * 以前 `connect()` 没有 try/catch、也没有超时：fetch 一 reject，状态就永久停在 `connecting`，
+ * 而 `connect()` 第一行 `if (state === 'connecting') return` 会把之后每一次重试都挡掉 ——
+ * 重连循环彻底死掉。真机日志就是「连接断开，准备重连」之后再无任何 connecting，只能重启 App。
+ */
+test('握手网络失败会继续重试，不会卡死在 connecting', async () => {
+  let attempts = 0
+  const neverFetch = (() => {
+    attempts += 1
+    return Promise.reject(new Error('network down'))
+  }) as unknown as typeof fetch
+  const { session } = makeSession({ fetchImpl: neverFetch, reconnectBaseMs: 1 })
+  void session.connect()
+  for (let i = 0; i < 200 && attempts < 3; i++) await sleep(5)
+  session.close()
+  assert.ok(attempts >= 3, `握手失败后没有继续重试（只尝试了 ${attempts} 次）`)
+})
