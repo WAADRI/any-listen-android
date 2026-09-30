@@ -1,10 +1,9 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
-import { Animated, AppState, Easing, StyleSheet, View, InteractionManager, type ColorValue, type LayoutChangeEvent, type TextStyle } from 'react-native'
+import { Animated, AppState, Easing, StyleSheet, View, type ColorValue, type LayoutChangeEvent, type TextStyle } from 'react-native'
 import Text from '@/components/common/Text'
 import { type AwlrcLine, type AwlrcSegment } from '@/utils/awlrc'
-import { getPosition } from '@/plugins/player'
 import { nextBoundaryAt, sweepXAt } from '@/utils/awlrcPlayer'
-import { elapsedInLine, useWordLyricProgress, wordLyricClock } from '@/utils/hooks/useWordLyricProgress'
+import { useWordLyricProgress, wordLyricClock } from '@/utils/hooks/useWordLyricProgress'
 
 /**
  * 播放页当前行的逐字歌词（卡拉OK 扫光）。
@@ -77,10 +76,6 @@ const WordLyricLine = memo(({ line, size, lineHeight, textAlign, playedColor, un
   /** 每一段末尾的像素位置（相对行首文字起点） */
   const [ends, setEnds] = useState<number[] | null>(null)
   const measured = useRef<number[]>([])
-  /** 刚切到扫光层（还没摆过位置）：第一个动作必须直接摆过去，不能从 0 开始动画 */
-  const firstStepRef = useRef(true)
-  /** 本行已经扫到的最远位置：同一行内**只允许前进**，任何「往回退」的修正都忽略 */
-  const lastSweepRef = useRef(0)
 
   // 换行/换歌：段变了，之前量到的位置作废
   useEffect(() => {
@@ -124,7 +119,7 @@ const WordLyricLine = memo(({ line, size, lineHeight, textAlign, playedColor, un
 
     const step = () => {
       if (isUnmounted) return
-      const elapsed = elapsedInLine(line.timeMs)
+      const elapsed = wordLyricClock.positionAt(Date.now()) - line.timeMs
       // 当前正在唱的那一段（-1 表示还没开始，或落在两段之间的空隙里）
       let index = -1
       for (let i = 0; i < segments.length; i++) {
@@ -135,22 +130,10 @@ const WordLyricLine = memo(({ line, size, lineHeight, textAlign, playedColor, un
       clipWidth.stopAnimation()
       const segment = index >= 0 ? segments[index] : null
       const remaining = segment ? segment.startMs + segment.durationMs - elapsed : 0
-
-      // 同一行内**只前进不后退**：这一条是结构性的，不再依赖「时钟什么时候被谁校正」。
-      // 「换行开头先快扫一下再从头上」= 扫光先前进再后退，只要禁止后退就不可能再出现。
-      // （时间轴本身仍按桌面版：段内线性、空隙停住、暂停冻住；这里只丢弃「往回退」的修正。）
-      const target = Math.max(sweepXAt(segments, ends, elapsed), lastSweepRef.current)
-      lastSweepRef.current = target
-
-      if (firstStepRef.current) {
-        // 兜底层（逐字换色）已经按时间推进过了，切到扫光层时直接摆到当前位置，
-        // 不要从 0 开始动画（那会看起来像「先快扫一下、再从头扫一遍」）
-        firstStepRef.current = false
-        clipWidth.setValue(target)
-      } else if (segment && segment.durationMs > 0 && remaining > 0 && wordLyricClock.isPlay) {
+      if (segment && segment.durationMs > 0 && remaining > 0 && wordLyricClock.isPlay) {
         // 还在这段的时长里：线性扫到该段末尾（时长按倍速换算）
         Animated.timing(clipWidth, {
-          toValue: Math.max(ends[index] ?? 0, target),
+          toValue: ends[index] ?? 0,
           duration: Math.max(1, remaining / wordLyricClock.rate),
           easing: Easing.linear,
           useNativeDriver: false,
@@ -158,7 +141,7 @@ const WordLyricLine = memo(({ line, size, lineHeight, textAlign, playedColor, un
       } else {
         // 还没开始 / 落在空隙里 / 这一段已经唱完 —— 以及**暂停**：
         // 暂停时必须直接摆到当前位置，不能把这一段动画跑完，否则暂停后字还会被扫完
-        clipWidth.setValue(target)
+        clipWidth.setValue(sweepXAt(segments, ends, elapsed))
       }
 
       const next = nextBoundaryAt(segments, elapsed)
@@ -167,25 +150,11 @@ const WordLyricLine = memo(({ line, size, lineHeight, textAlign, playedColor, un
       if (AppState.currentState === 'background') return
       timer = setTimeout(step, Math.max(16, (next - elapsed) / wordLyricClock.rate))
     }
-    // 兜底对齐（250ms 一次）：拖动进度条这类位置跳变，不依赖任何事件/state——
-    // 直接读本机播放位置，偏差超过 100ms 就重新给时钟起表并立刻把扫光摆过去。
-    // 只做「读位置 + 必要时 setValue/重开动画」，不触发 React 重渲染。
-    const verify = setInterval(() => {
-      if (isUnmounted || AppState.currentState === 'background' || !wordLyricClock.isPlay) return
-      void getPosition().then((position) => {
-        if (isUnmounted || typeof position !== 'number' || position < 0) return
-        const positionMs = position * 1000
-        if (Math.abs(wordLyricClock.positionAt(Date.now()) - positionMs) < 100) return
-        wordLyricClock.setPlay(true, Date.now(), positionMs)
-        step()
-      }).catch(() => {})
-    }, 250)
     step()
 
     return () => {
       isUnmounted = true
       if (timer) clearTimeout(timer)
-      clearInterval(verify)
       clipWidth.stopAnimation()
     }
   }, [canSweep, ends, segments, line.timeMs, resyncVersion, clipWidth])

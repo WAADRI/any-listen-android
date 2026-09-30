@@ -305,7 +305,25 @@ public class LyricPlayer {
 
   private void handleMaxLine() {
     this.onPlay(this.curLineNum);
+    // 最后一行没有「下一行」可以调度，如果这里立刻 pause()，逐字扫光的重绘（依赖播放中的时钟）
+    // 会同时停下 —— 真机现象就是「每首歌最后一行不扫光」。所以先等这一行扫完再停。
+    int tail = this.getWordTailDuration(this.curLineNum);
+    if (tail > 0 && isPlay) {
+      startTimeout(() -> {
+        if (!isPlay) return;
+        pause();
+      }, (long) (tail / this.playbackRate));
+      return;
+    }
     this.pause();
+  }
+
+  /**
+   * 一行的「扫光尾部时长」（毫秒）。最后一行没有下一行可调度，用它把最后一行扫完再停。
+   * 默认 0：没有逐字数据时保持原有行为（立刻停）。
+   */
+  protected int getWordTailDuration(int lineNum) {
+    return 0;
   }
 
   private void refresh() {

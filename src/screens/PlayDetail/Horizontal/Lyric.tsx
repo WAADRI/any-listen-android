@@ -6,11 +6,11 @@ import { createStyle } from '@/utils/tools'
 // import { useComponentIds } from '@/store/common/hook'
 import { useTheme } from '@/store/theme/hook'
 import { useSettingValue } from '@/store/setting/hook'
-import Text, { AnimatedColorText } from '@/components/common/Text'
+import { AnimatedColorText } from '@/components/common/Text'
 import { setSpText } from '@/utils/pixelRatio'
 import playerState from '@/store/player/state'
 import { scrollTo } from '@/utils/scroll'
-import { findAwlrcLine, lineOrderKind, lineStyleKind, type Awlrc } from '@/utils/awlrc'
+import { findAwlrcLine, lineStyleKind, type Awlrc } from '@/utils/awlrc'
 import WordLyricLine from '../components/WordLyricLine'
 import PlayLine, { type PlayLineType } from '../components/PlayLine'
 // import { screenkeepAwake } from '@/utils/nativeModules/utils'
@@ -69,13 +69,11 @@ const LrcLine = memo(({ line, lineNum, activeLine, awlrc, onLayout }: LineProps)
             playedColor={theme['c-primary']}
             unplayColor={theme['c-250']}
           />
-          // 直接用普通 Text 换色，不要 `AnimatedColorText` 的渐变过渡（要求：重画时直接变颜色）
-          : <Text style={{
+          : <AnimatedColorText style={{
             ...styles.lineText,
             textAlign,
             lineHeight,
-            opacity: colors[2],
-          }} textBreakStrategy="simple" color={colors[0]} size={size}>{line.text}</Text>
+          }} textBreakStrategy="simple" color={colors[0]} opacity={colors[2]} size={size}>{line.text}</AnimatedColorText>
       }
       {
         line.extendedLyrics.map((lrc, index) => {
@@ -90,9 +88,10 @@ const LrcLine = memo(({ line, lineNum, activeLine, awlrc, onLayout }: LineProps)
   )
 }, (prevProps, nextProps) => {
   if (prevProps.line !== nextProps.line || prevProps.awlrc !== nextProps.awlrc) return false
-  // 「未唱 / 当前行 / 已唱」的分类变了就必须重画（往回拖进度条时原本已唱的行要变回未唱，
-  // 往前拖时跳过的行要补上），见 utils/awlrc.ts 的 lineOrderKind
-  return lineOrderKind(prevProps.lineNum, prevProps.activeLine) === lineOrderKind(nextProps.lineNum, nextProps.activeLine)
+  // 焦点变化必须重渲染，否则会留着另一套配色（已唱色 / 未唱色）
+  if ((prevProps.activeLine == prevProps.lineNum) !== (nextProps.activeLine == nextProps.lineNum)) return false
+  // 其余情况不用跟着父组件重画：逐字进度与扫光都在 WordLyricLine 里自己推进
+  return true
 })
 const wait = async() => new Promise(resolve => setTimeout(resolve, 100))
 
