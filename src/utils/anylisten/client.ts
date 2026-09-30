@@ -111,6 +111,13 @@ async function fetchServerId(base: string, fetchImpl: typeof fetch): Promise<str
   }
 }
 
+/** 握手超时：fetch 挂住时也必须让重试循环继续，否则状态会永久停在 connecting。 */
+function handshakeTimeout(ms: number): Promise<never> {
+  return new Promise<never>((_, reject) => {
+    setTimeout(() => { reject(new Error(`握手超时（${ms}ms）`)) }, ms)
+  })
+}
+
 /** 从服务器地址推导 WebSocket 地址。 */
 export function buildSocketUrl(serverUrl: string, token: string): string {
   const base = normalizeServerUrl(serverUrl)
@@ -139,6 +146,8 @@ export interface SessionOptions {
   heartbeatTimeoutMs?: number
   /** 重连基础退避（毫秒） */
   reconnectBaseMs?: number
+  /** 握手（HTTP）超时：fetch 挂住时也必须让重试循环继续 */
+  handshakeTimeoutMs?: number
   /** 是否在连接建立后自动调用 inited */
   onStateChange?: (state: ConnState, detail?: string) => void
   onError?: (message: string) => void
@@ -170,10 +179,14 @@ export class AnyListenSession {
   private lastInboundAt = 0
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  /** 每次尝试的序号：迟到的握手结果不能顶掉更新的尝试 */
+  private attemptId = 0
+  /** 看门狗：只要还活着，就保证「非 connected 必有下一次重试」 */
+  private watchdogTimer: ReturnType<typeof setInterval> | null = null
   private token: string | null = null
   /** 入站请求处理器（服务端 → 客户端的调用） */
   private handlers = new Map<string, (...args: unknown[]) => unknown>()
-  private opts: Required<Pick<SessionOptions, 'callTimeoutMs' | 'heartbeatTimeoutMs' | 'reconnectBaseMs'>> &
+  private opts: Required<Pick<SessionOptions, 'callTimeoutMs' | 'heartbeatTimeoutMs' | 'reconnectBaseMs' | 'handshakeTimeoutMs'>> &
     SessionOptions
 
   /**
@@ -195,6 +208,7 @@ export class AnyListenSession {
       callTimeoutMs: 15_000,
       heartbeatTimeoutMs: 46_000,
       reconnectBaseMs: 1_000,
+      handshakeTimeoutMs: 15_000,
       ...options,
     }
   }
@@ -222,12 +236,30 @@ export class AnyListenSession {
     if (this.state === 'connecting' || this.state === 'connected') return
     this.closedByUser = false
     this.setState('connecting')
+    this.startWatchdog()
 
-    const hs = await handshake({
-      serverUrl: this.opts.serverUrl,
-      password: this.opts.password,
-      fetchImpl: this.opts.fetchImpl,
-    })
+    const attempt = ++this.attemptId
+    let hs: Awaited<ReturnType<typeof handshake>>
+    try {
+      const pending = handshake({
+        serverUrl: this.opts.serverUrl,
+        password: this.opts.password,
+        fetchImpl: this.opts.fetchImpl,
+      })
+      // 迟到的失败自己吞掉，避免 unhandled rejection（结果交给 race）
+      pending.catch(() => {})
+      hs = await Promise.race([pending, handshakeTimeout(this.opts.handshakeTimeoutMs)])
+    } catch (err) {
+      // ⚠️ 这里以前既没有 try/catch 也没有超时：网络波动时 fetch 直接 reject（或一直挂住），
+      // 状态就永久停在 connecting，而 connect() 第一行会把它挡掉 —— 重连循环彻底死掉。
+      // 真机表现：断开后再也不重连，只能重启 App（日志里「准备重连」之后再无 connecting）。
+      if (attempt !== this.attemptId || this.closedByUser) return
+      this.fail(`握手失败：${errText(err)}`)
+      this.setState('closed', '握手失败，准备重连')
+      this.scheduleReconnect()
+      return
+    }
+    if (attempt !== this.attemptId || this.closedByUser) return
 
     if (!hs.ok) {
       // 鉴权类错误不值得重试（密码错、被封禁），直接停在这里并上报
@@ -388,6 +420,7 @@ export class AnyListenSession {
     this.reconnectAttempt += 1
     // 指数退避，上限 30s
     const delay = Math.min(this.opts.reconnectBaseMs * 2 ** (this.reconnectAttempt - 1), 30_000)
+    this.setState('closed', '连接断开，准备重连（第 ' + this.reconnectAttempt + ' 次，' + Math.round(delay) + 'ms 后）')
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null
       void this.connect()
@@ -434,7 +467,7 @@ export class AnyListenSession {
     return new Promise<T>((resolve, reject) => {
       const socket = this.ws
       if (!socket || this.state !== 'connected') {
-        reject(new Error(`连接未就绪（当前状态 ${this.state}）`))
+        reject(new Error('连接未就绪（当前状态 ' + this.state + '）'))
         return
       }
       const callId = String(++this.seq)
@@ -461,9 +494,41 @@ export class AnyListenSession {
   }
 
   /** 主动关闭，不再重连。 */
+  /**
+   * 立刻重连（回到前台、网络恢复时用）：取消待执行的重试、重置退避，马上再连一次。
+   *
+   * 用于「后台期间 JS 定时器被系统挂起，退避定时器没能按时触发」这种情形 —— 回到前台后
+   * 由原生 AppState 事件立刻补一次，不必等下一个退避周期。
+   */
+  reconnectNow(): void {
+    if (this.closedByUser || this.state === 'connected') return
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
+    this.reconnectAttempt = 0
+    // 上一次尝试可能卡在 connecting（fetch 挂住），必须重置状态，否则 connect() 会早退
+    if (this.state === 'connecting') this.setState('closed')
+    void this.connect()
+  }
+
+  /** 看门狗：非 connected 且没有待执行重试时，补排一次 */
+  private startWatchdog(): void {
+    if (this.watchdogTimer) return
+    this.watchdogTimer = setInterval(() => {
+      if (this.closedByUser || this.state === 'connected') return
+      if (this.reconnectTimer) return
+      this.scheduleReconnect()
+    }, 15_000)
+  }
+
   close(): void {
     this.closedByUser = true
     this.stopHeartbeat()
+    if (this.watchdogTimer) {
+      clearInterval(this.watchdogTimer)
+      this.watchdogTimer = null
+    }
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null

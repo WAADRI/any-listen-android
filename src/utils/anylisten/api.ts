@@ -64,7 +64,33 @@ function requireCredentials(): AnyListenCredentials {
  *
  * 凭据变化时旧会话会被关闭并替换 —— 否则会出现「改了地址还在连旧服务器」。
  */
+let appStateHooked = false
+
+/**
+ * 回到前台时立刻补一次重连。
+ *
+ * 后台期间 JS 定时器可能被系统挂起（真机日志里有一次断线后 4 分钟才重连，而退避上限只有 30s），
+ * 所以不能只靠退避定时器；AppState 是原生事件，回到前台一定会到。
+ * 惰性 require，避免让 api.ts 的其它部分（以及单测）依赖 react-native。
+ */
+function hookAppState(): void {
+  if (appStateHooked) return
+  appStateHooked = true
+  try {
+    const { AppState } = require('react-native') as {
+      AppState: { addEventListener: (type: string, cb: (state: string) => void) => unknown }
+    }
+    AppState.addEventListener('change', (state) => {
+      if (state !== 'active') return
+      session?.reconnectNow()
+    })
+  } catch {
+    /* 非 RN 环境（单测）忽略 */
+  }
+}
+
 export function getSession(): AnyListenSession {
+  hookAppState()
   const { serverUrl, password } = requireCredentials()
   const key = `${serverUrl}\u0000${password}`
   if (session && sessionKey === key) return session
