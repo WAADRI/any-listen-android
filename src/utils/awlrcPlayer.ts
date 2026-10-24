@@ -130,6 +130,86 @@ export const nextBoundaryAt = (
   return null
 }
 
+/** 断行后的一个视觉行：段的区间、行内坐标与它在全局进度轴上的位置 */
+export interface SweepRow {
+  /** 本行的段区间 [from, to) */
+  from: number
+  to: number
+  /** 本行内每段的 x 偏移，与 [from, to) 一一对应 */
+  offsets: number[]
+  /** 本行宽度（行内段宽之和；段文本自带尾随空格，所以行宽含尾空格） */
+  width: number
+  /** 本行起点在全局进度轴上的位置 = 前面所有行的宽度之和 */
+  progressStart: number
+}
+
+export interface SweepLayout {
+  rows: SweepRow[]
+  /**
+   * 每段**末尾**在全局进度轴上的位置。把整个扫光展开成一条「虚拟的横轴」：
+   * 第 r 行接着第 r-1 行的末尾继续，于是 `sweepXAt(segments, globalEnds, elapsed)`
+   * 的语义原封不动地推广到了多行。
+   */
+  globalEnds: number[]
+  /** 进度轴总长（最后一行的 progressStart + width） */
+  totalProgress: number
+}
+
+/**
+ * 按段宽贪心断行，产出多视觉行扫光需要的全部几何信息。
+ *
+ * 之前只有「一行放得下」才做扫光：clip 是一个水平矩形，折成两行后第二行的
+ * 字在水平方向上与第一行重叠，盒子变宽会把第二行的开头一起点亮，于是长句
+ * 只能退回逐段换色（真机上就是「一个词一个词地跳」）。
+ *
+ * 多行的做法：**每个视觉行一个 clip 条**，条内只放该行的段；所有条共用一个
+ * 「全局像素进度」动画值，第 r 行的 clip 宽度 = 进度在 [progressStart,
+ * progressStart + width] 上的 clamp 插值（RN `interpolate` 的默认外推就是
+ * clamp：前面的行扫满停住，后面的行还没扫到保持 0）。
+ *
+ * 断行只发生在**段边界**（贪心：放不下就换行），不会把一个段劈成两半——
+ * 段是字/词，这正好也是歌词的自然断法。唯一的例外是单个段自己就比容器宽
+ * （几乎没有），那行的 `width` 会超过 `boxWidth`，调用方检查后整行退回兜底。
+ *
+ * 返回 `null` 表示没法布局（没有段、容器宽非法、段宽非法）。
+ */
+export const layoutSweepRows = (
+  segWidths: readonly number[],
+  boxWidth: number,
+): SweepLayout | null => {
+  if (!segWidths.length || !(boxWidth > 0)) return null
+
+  const rows: SweepRow[] = []
+  const globalEnds: number[] = []
+  let from = 0
+  let offsets: number[] = []
+  let rowWidth = 0
+  let progressStart = 0
+
+  const flushRow = (toExclusive: number) => {
+    rows.push({ from, to: toExclusive, offsets, width: rowWidth, progressStart })
+    progressStart += rowWidth
+  }
+
+  for (let i = 0; i < segWidths.length; i++) {
+    const width = segWidths[i]
+    if (!Number.isFinite(width) || width < 0) return null
+    // 贪心断行：放不下就换行。第一段必须成行（即使它自己就超宽），否则空转
+    if (i > from && rowWidth + width > boxWidth) {
+      flushRow(i)
+      from = i
+      offsets = []
+      rowWidth = 0
+    }
+    offsets.push(rowWidth)
+    rowWidth += width
+    globalEnds.push(progressStart + rowWidth)
+  }
+  flushRow(segWidths.length)
+
+  return { rows, globalEnds, totalProgress: progressStart }
+}
+
 /** 本行唱完的时刻（最后一段的结束时间）。没有段时为 0。 */
 export const lineEndAt = (segments: readonly AwlrcSegment[]): number => {
   let end = 0

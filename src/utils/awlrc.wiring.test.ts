@@ -84,15 +84,17 @@ test('两个方向的播放页都按段渲染，并交给 WordLyricLine', () => 
 test('逐字渲染组件：一层未唱、一层已唱，用会长的裁剪盒扫出来', () => {
   const component = read('../screens/PlayDetail/components/WordLyricLine.tsx')
   // 扫光：线性动画 + 时长来自该段自己的时长（对应桌面版 duration = 段时长 / rate）
-  assert.match(component, /Animated\.timing\(clipWidth/, '扫光不再用定时动画驱动')
+  assert.match(component, /Animated\.timing\(progress/, '扫光不再用定时动画驱动')
   assert.match(component, /easing:\s*Easing\.linear/, '扫光不是线性推进，会与桌面版不一致')
   assert.match(component, /duration:\s*Math\.max\(1,\s*remaining \/ wordLyricClock\.rate\)/, '扫光时长没有按「本段剩余时长 / 倍速」计算')
   assert.match(component, /sweepXAt\(/, '没有用时间轴算出该时刻的扫过位置')
   // 两层同一行文字：未唱层 + 已唱层的裁剪盒
   assert.match(component, /styles\.clip/, '缺少裁剪层')
   assert.match(component, /overflow:\s*'hidden'/, '裁剪层没有 overflow: hidden，扫光会整行露出来')
-  // 一行放不下时退回逐段换色（折行时整行扫光会把第二行也点亮）
-  assert.match(component, /totalWidth <= box\.width/, '缺少「一行放得下才用扫光」的判断')
+  // 折行也照扫：布局由 layoutSweepRows 断行（每视觉行一个 clip 条）；
+  // 只有单个段比整行还宽（断不下去）或行宽非法时，才退回逐段换色
+  assert.match(component, /layoutSweepRows\(/, '不再用断行布局，折行的长句会退回逐段换色')
+  assert.match(component, /layout\.rows\.every\(\(row\) => row\.width > 0 && row\.width <= box\.width\)/, '缺少「每行都放得下才用扫光」的判断（单段超宽会溢出裁剪条）')
   assert.match(component, /index < played \? playedColor : unplayColor/, '兜底渲染没有逐段换色')
 })
 
@@ -100,7 +102,7 @@ test('兜底分支里也必须挂测量行（否则永远进不了扫光）', ()
   const component = read('../screens/PlayDetail/components/WordLyricLine.tsx')
   // 真机踩过：段宽只有挂了 onLayout 才量得到，而扫光分支又要求先量到段宽才渲染。
   // 测量行如果只放在扫光分支里，两者互相等待 —— 表现是「一个字一个字换色，字内部不扫」。
-  const fallbackStart = component.indexOf('if (!canSweep)')
+  const fallbackStart = component.search(/if \(!canSweep/)
   assert.ok(fallbackStart >= 0, '找不到兜底分支，本用例已失效')
   const sweepStart = component.indexOf('// 扫光：两层同一行文字')
   assert.ok(sweepStart > fallbackStart, '找不到扫光分支的分界，本用例已失效')
