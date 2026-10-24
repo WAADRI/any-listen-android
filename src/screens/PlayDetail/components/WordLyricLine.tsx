@@ -23,10 +23,15 @@ import { useWordLyricProgress, wordLyricClock } from '@/utils/hooks/useWordLyric
  *
  * 长句折成两行后，第二行的字在水平方向上与第一行重叠，一个水平矩形没法只照亮
  * 「第一行的全部 + 第二行的开头」。做法是把裁剪拆到**每个视觉行**：先按段宽贪心
- * 断行（`layoutSweepRows`），段按 `(行偏移 + 行内偏移, 行号 × 行高)` 绝对定位；
- * 上层每个视觉行一个 clip 条，条内只放该行的段。所有条共用一个「全局像素进度」
- * 动画值——第 r 行的 clip 宽度 = 进度在该行区间上的 clamp 插值，于是视觉上就是
- * 第一行扫满、接着第二行从零继续扫，边界连续。
+ * 断行（`layoutSweepRows`），每个视觉行一个行框（绝对定位到行位置）；上层每个
+ * 视觉行一个 clip 条，所有条共用一个「全局像素进度」动画值——第 r 行的 clip 宽度
+ * = 进度在该行区间上的 clamp 插值，于是视觉上就是第一行扫满、接着第二行从零
+ * 继续扫，边界连续。
+ *
+ * ⚠️ clip 条（以及下层行框）内的段**必须流式排布，不能绝对定位**：宽度动画 +
+ * 绝对定位子元素在 Android 上会出现部分区域不重绘（宽度/高度不在原生动画优化
+ * 的属性集里）——真机上表现为「第一个字只有下半跟着扫，上半要等下一段动画
+ * start 时才瞬间补上」。旧单行实现的 clip 内一直是流式排布，没有此问题。
  *
  * 时间轴照搬桌面版：播放位置只在 play / pause / seek / 换行时读一次，之后靠
  * `wordLyricClock` 自己走，每段开始时开一次线性动画、时长就是这一段自己的时长
@@ -179,12 +184,6 @@ const WordLyricLine = memo(({ line, size, lineHeight, textAlign, playedColor, un
     }))
   }, [layout, progress])
 
-  // 扫光分支里挂在下层段上的测量回调：宽度变了才更新（handler 里只认宽度，
-  // 段被重新定位时 x 会变，不参与比较，所以不会形成「布局→测量→布局」的环）
-  const onBaseSegmentLayout = useCallback((index: number) => (event: { nativeEvent: { layout: { x: number, width: number } } }) => {
-    handleSegmentLayout(index, event.nativeEvent.layout.x, event.nativeEvent.layout.width)
-  }, [handleSegmentLayout])
-
   // 兜底：逐段换色（段宽还没量到、或单段超宽断不下去时）。
   //
   // ⚠️ 这里**必须**也挂上测量行：段宽只有挂了 `onLayout` 才量得到，而扫光分支又要求
@@ -211,7 +210,8 @@ const WordLyricLine = memo(({ line, size, lineHeight, textAlign, playedColor, un
   }
 
   // 扫光：两层同一行文字。上层（已唱色）按视觉行拆进 overflow hidden 的 clip 条里，
-  // 条宽随全局进度增长；下层（未唱色）整行绝对定位。
+  // 条宽随全局进度增长；下层（未唱色）同结构。两层行内的段都流式排布（见文件头
+  // 的 ⚠️：绝对定位 + 宽度动画在 Android 上部分区域不重绘）。
   const rowLeft = (rowWidth: number): number => textAlign === 'center'
     ? Math.max(0, (box.width - rowWidth) / 2)
     : textAlign === 'right'
@@ -220,40 +220,31 @@ const WordLyricLine = memo(({ line, size, lineHeight, textAlign, playedColor, un
 
   return (
     <View style={{ height: layout.rows.length * lineHeight }} onLayout={handleContainerLayout}>
-      {/* 下层：未唱色，每段绝对定位（行对齐偏移 + 行内偏移，行号 × 行高）。
-          段上仍挂测量回调：扫光分支没有测量行，字号/字号设置变化时靠这里重测段宽 */}
+      {/* 下层：未唱色。行框绝对定位到行位置，段在框内流式排布。
+          行框内挂测量回调（带 row.from 偏移）：扫光分支没有测量行，
+          字号/字号设置变化时靠这里重测段宽 */}
       {layout.rows.map((row, r) => (
-        <View
-          key={`base-${r}`}
-          style={[styles.row, { left: rowLeft(row.width), top: r * lineHeight, width: row.width, height: lineHeight }]}
-        >
-          {segments.slice(row.from, row.to).map((segment, i) => (
-            <Text
-              key={row.from + i}
-              size={size}
-              color={unplayColor}
-              numberOfLines={1}
-              onLayout={onBaseSegmentLayout(row.from + i)}
-              style={{ position: 'absolute', left: row.offsets[i], top: 0, lineHeight }}
-            >{segment.text}</Text>
-          ))}
+        <View key={`base-${r}`} style={[styles.row, { left: rowLeft(row.width), top: r * lineHeight }]}>
+          <TextRow
+            segments={segments.slice(row.from, row.to)}
+            size={size}
+            lineHeight={lineHeight}
+            color={unplayColor}
+            onSegmentLayout={(index, x, width) => { handleSegmentLayout(row.from + index, x, width) }}
+          />
         </View>
       ))}
-      {/* 上层：已唱色。每个视觉行一个 clip 条，条内段的坐标相对条自身 */}
+      {/* 上层：已唱色。每个视觉行一个 clip 条，条内放该行的段（流式，起点与行框一致）。
+          条内先包一层固定宽度的行容器：内容布局与 clip 的宽度动画彻底解耦（旧单行
+          实现同款结构，+8 是给 textShadow/字形边缘留的余量） */}
       {layout.rows.map((row, r) => (
         <Animated.View
           key={`clip-${r}`}
           style={[styles.clip, { left: rowLeft(row.width), top: r * lineHeight, height: lineHeight, width: clipWidths[r] }]}
         >
-          {segments.slice(row.from, row.to).map((segment, i) => (
-            <Text
-              key={row.from + i}
-              size={size}
-              color={playedColor}
-              numberOfLines={1}
-              style={{ position: 'absolute', left: row.offsets[i], top: 0, lineHeight }}
-            >{segment.text}</Text>
-          ))}
+          <View style={[styles.row, { left: 0, top: 0, width: row.width + 8 }]}>
+            <TextRow segments={segments.slice(row.from, row.to)} size={size} lineHeight={lineHeight} color={playedColor} />
+          </View>
         </Animated.View>
       ))}
     </View>
@@ -261,11 +252,12 @@ const WordLyricLine = memo(({ line, size, lineHeight, textAlign, playedColor, un
 })
 
 const styles = StyleSheet.create({
-  // 下层每视觉行的定位框：只做定位容器，段在里面绝对排布
+  // 下层每视觉行的定位框：框绝对定位到行位置，段在框内横向流式排布
   row: {
     position: 'absolute',
     left: 0,
     top: 0,
+    flexDirection: 'row',
   },
   // 只用来量每一段的宽度：不参与父容器排版，但自己会被正常布局（opacity 0 不影响布局）
   measure: {
