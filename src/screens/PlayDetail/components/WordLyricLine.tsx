@@ -149,7 +149,10 @@ const WordLyricLine = memo(({ line, size, lineHeight, textAlign, playedColor, un
       const segment = index >= 0 ? segments[index] : null
       const remaining = segment ? segment.startMs + segment.durationMs - elapsed : 0
       if (segment && segment.durationMs > 0 && remaining > 0 && wordLyricClock.isPlay) {
-        // 还在这段的时长里：线性扫到该段末尾（时长按倍速换算；toValue 是全局像素）
+        // 还在这段的时长里：线性扫到该段末尾（时长按倍速换算；toValue 是全局像素）。
+        // 先摆到当前进度再开动画：换行切行可能滞后几十毫秒（native resume 的起跑
+        // 延迟等），不摆的话动画会从 0「追扫」到当前位置——真机上就是首字快扫
+        progress.setValue(sweepXAt(segments, layout.globalEnds, elapsed))
         if (!loggedFirstStepRef.current) {
           loggedFirstStepRef.current = true
           // 诊断日志（配合 useWordLyricProgress 的重锚日志）：定位真机首字快扫问题
