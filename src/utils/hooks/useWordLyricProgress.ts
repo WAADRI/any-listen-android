@@ -1,8 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AppState } from 'react-native'
 import { getPosition } from '@/plugins/player'
 import { useIsPlay } from '@/store/player/hook'
-import { log } from '@/utils/log'
 import { playedCount, type AwlrcLine } from '@/utils/awlrc'
 import { AwlrcClock, nextBoundaryAt } from '@/utils/awlrcPlayer'
 
@@ -46,27 +45,14 @@ export const useWordLyricProgress = (line: AwlrcLine | undefined): WordLyricProg
   const [resyncVersion, setResyncVersion] = useState(0)
 
   // 重新锚定：换行、播放/暂停切换、拖动进度条、回到前台，都用本机播放位置校准一次
-  const prevAnchorRef = useRef<{ line?: AwlrcLine | undefined, isPlay?: boolean }>({})
   useEffect(() => {
     let isUnmounted = false
-    const lineTimeMs = line?.timeMs
-    const source = prevAnchorRef.current.line !== line
-      ? '换行'
-      : prevAnchorRef.current.isPlay !== isPlay ? (isPlay ? '恢复播放' : '暂停') : 'effect重跑'
-    prevAnchorRef.current = { line, isPlay }
-    // 诊断日志：暂停恢复后换行「前几个字快扫一下再从头扫」的问题，需要知道
-    // 每次重锚的来源与读到的位置（只在有逐字行时打，避免无歌时刷屏）
-    const resync = (via: string) => {
-      const before = wordLyricClock.isPlay ? Math.round(wordLyricClock.positionAt(Date.now())) : null
+    const resync = () => {
       void readPosition().then((position) => {
         if (isUnmounted) return
         // 读不到位置（播放器还没就绪）也要恢复走表，否则逐字歌词会一直冻住
         if (position == null) wordLyricClock.setPlay(isPlay, Date.now())
         else wordLyricClock.setPlay(isPlay, Date.now(), position)
-        if (lineTimeMs != null) {
-          log.info(`[lyric] 重锚(${via}/${source}) 行=${lineTimeMs}ms 位置=${position ?? '读取失败'}ms` +
-            (before != null && position != null ? ` 重锚前时钟=${before}ms 偏差=${position - before}ms` : ''))
-        }
         setResyncVersion(version => version + 1)
       })
     }
@@ -77,16 +63,16 @@ export const useWordLyricProgress = (line: AwlrcLine | undefined): WordLyricProg
     // 拖进度/切歌没有这个叠加，所以看不出问题）。播放中保持时钟在走、读到
     // 位置再原子重锚，空窗里只剩读位置那点毫秒级漂移。
     if (!isPlay) wordLyricClock.setPlay(false, Date.now())
-    resync('effect')
+    resync()
 
     const handleSetProgress = () => {
-      resync('setProgress事件')
+      resync()
     }
     // 拖进度条、跳到某一行、恢复播放进度都会发这个事件
     global.app_event.on('setProgress', handleSetProgress)
 
     const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') resync('回前台')
+      if (state === 'active') resync()
     })
 
     return () => {
