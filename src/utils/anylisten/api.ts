@@ -168,8 +168,19 @@ export function getAllUserLists(): Promise<AnyListenMyAllList> {
   return getSession().call<AnyListenMyAllList>('getAllUserLists')
 }
 
-/** 取某个歌单的全部歌曲。返回**裸数组**，不是信封对象。 */
-export function getListMusics(listId: string): Promise<AnyListenMusicList> {
+/**
+ * 取某个歌单的全部歌曲。返回**裸数组**，不是信封对象。
+ *
+ * ⚠️ 实测（2026-10，上游服务端）：歌单曲目在服务端是**懒加载缓存**，冷缓存时
+ * `getListMusics` 不报错、直接返回**空数组**——同一连接隔几百毫秒再调就有了
+ * （Web 端常驻所以总是热的；Node 探针冷连接每次都空、等一拍就中）。空数组
+ * 区分不了「真空歌单」和「还没加载好」，所以这里对空结果延迟重试一次：
+ * 真空歌单多等一拍没有代价，冷缓存拿到空列表的代价是列表/搜索库缺歌。
+ */
+export async function getListMusics(listId: string): Promise<AnyListenMusicList> {
+  const first = await getSession().call<AnyListenMusicList>('getListMusics', listId)
+  if (Array.isArray(first) && first.length) return first
+  await new Promise(resolve => setTimeout(resolve, 800))
   return getSession().call<AnyListenMusicList>('getListMusics', listId)
 }
 
