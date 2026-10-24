@@ -56,8 +56,13 @@ export const useWordLyricProgress = (line: AwlrcLine | undefined): WordLyricProg
         setResyncVersion(version => version + 1)
       })
     }
-    // 暂停时先停表，位置不再前进；恢复播放要等读到真实位置再起表
-    wordLyricClock.setPlay(false, Date.now())
+    // 只有「暂停」才先停表，位置冻结在停表那一刻。**播放中的换行不能停表**：
+    // 停表 → 异步读位置的空窗里，新挂载的扫光会先按「冻结位置」摆一下，读到
+    // 真实位置重锚后又摆回去 —— 真机上就是「换行后前几个字快扫一下再从头扫」
+    // （暂停恢复后的首次换行，恢复锚点带上的偏差会把这次瞬切放大到整字可见；
+    // 拖进度/切歌没有这个叠加，所以看不出问题）。播放中保持时钟在走、读到
+    // 位置再原子重锚，空窗里只剩读位置那点毫秒级漂移。
+    if (!isPlay) wordLyricClock.setPlay(false, Date.now())
     resync()
 
     const handleSetProgress = () => {

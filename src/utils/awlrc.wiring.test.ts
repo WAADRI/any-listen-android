@@ -118,6 +118,9 @@ test('逐字进度改用本地时钟 + 段边界定时器，不再按固定间�
   assert.match(hook, /wordLyricClock/, '没有使用本地时钟')
   assert.match(hook, /global\.app_event\.on\('setProgress'/, '拖进度条/恢复进度时逐字不会重新对齐')
   assert.match(hook, /AppState\.currentState === 'background'/, '后台时仍在排定时器')
+  // 只有暂停才停表：播放中的换行停表 → 异步重锚的空窗里，扫光会按冻结位置先摆
+  // 一下再摆回去（真机现象：「前几个字快扫一下再从头扫」）
+  assert.match(hook, /if \(!isPlay\) wordLyricClock\.setPlay\(false, Date\.now\(\)\)/, '播放中的换行又停表了（瞬切回归）')
   // 关键在于「只在段开始时醒一次」：任何固定间隔轮询都会把效果量化成网格并造成掉帧
   assert.ok(!/setInterval/.test(hook), '逐字进度又回到固定间隔轮询了（上一版就是因此生硬卡顿）')
   assert.ok(!/setInterval/.test(read('../screens/PlayDetail/components/WordLyricLine.tsx')), '扫光层又回到固定间隔轮询了')
