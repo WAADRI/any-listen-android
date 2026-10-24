@@ -16,6 +16,7 @@ import {
   toggleDesktopLyricRoma,
 } from '@/core/desktopLyric'
 import { getPosition } from '@/plugins/player'
+import { wordLyricClock } from '@/utils/hooks/useWordLyricProgress'
 import playerState from '@/store/player/state'
 import settingState from '@/store/setting/state'
 import { updateNowPlayingTitles } from '@/plugins/player/utils'
@@ -51,6 +52,13 @@ const handleSetLyric = async(lyric: string, translation = '', romalrc = '', awlr
 export const handlePlay = (time: number) => {
   lrcPlay(time)
   void playDesktopLyric(time)
+  // 用**同一次读数**锚定逐字扫光时钟。歌词 parser 与扫光时钟是两条独立时钟，
+  // 各自读一次播放位置的话，两次异步读取的时刻差（真机恢复播放时实测约
+  // 140ms）会被固化成两条时钟的恒定偏差——之后每次换行 parser 都偏差切行，
+  // 新行挂载时第一段已经「唱过」几十毫秒，兜底渲染把第一个字闪成已唱色、
+  // 扫光又从 0 追（真机「首字快扫一下再从头扫」）。这里锚定后，
+  // useWordLyricProgress 的 resync 会按 anchorAt 让位，不再引入第二次读取差。
+  wordLyricClock.setPlay(true, Date.now(), time)
 }
 
 /**
@@ -59,6 +67,7 @@ export const handlePlay = (time: number) => {
 export const pause = () => {
   lrcPause()
   void pauseDesktopLyric()
+  wordLyricClock.setPlay(false, Date.now())
 }
 
 /**
@@ -74,6 +83,8 @@ export const stop = () => {
  */
 export const setPlaybackRate = async(playbackRate: number) => {
   lrcSetPlaybackRate(playbackRate)
+  // 扫光时钟的倍速也要同步，否则扫光动画的时长（段剩余时长 / rate）按旧倍速算
+  wordLyricClock.setRate(playbackRate, Date.now())
   await setDesktopLyricPlaybackRate(playbackRate)
   if (playerState.isPlay) {
     setTimeout(() => {
