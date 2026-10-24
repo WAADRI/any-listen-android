@@ -4,6 +4,11 @@ import playerState from '@/store/player/state'
 import { getListMusicSync } from '@/utils/listManage'
 import { setProgress } from '@/core/player/progress'
 import { LIST_IDS } from '@/config/constant'
+import { toOldMusicInfo } from '@/utils'
+import { serverMusicInfoOf } from '@/utils/anylisten/convert'
+import { resolveServerUrl } from '@/utils/anylisten/serverUrl'
+import { getMusicPic, getSession } from '@/utils/anylisten/api'
+import { updateListMusics } from '@/core/list'
 
 
 export const setMusicInfo = (musicInfo: Partial<LX.Player.MusicInfo>) => {
@@ -85,6 +90,42 @@ export const resetPlayerMusicInfo = () => {
   })
 }
 
+let lastPicRefreshId = ''
+
+/**
+ * anylisten 的封面地址会随服务端缓存清理而失效（本地列表里存的是收藏/添加时的快照），
+ * 而 UI 的封面直接用 `meta.picUrl` 快照显示、没有任何重取机制——服务端清一次缓存，
+ * 收藏列表里的歌就永远是占位图。切歌时先显示快照、再异步向服务端要一次最新地址：
+ * 拿到就刷新显示并**写回所属列表**（快照被更新，之后就不必再刷）；失败（如服务端
+ * 没装扩展音源）保持快照不动。服务端 getMusicPic 自带缓存，一次调用的成本很低
+ * ——Web 端每次显示封面都是现调的。
+ */
+const refreshAnylistenPic = (musicInfo: LX.Music.MusicInfo) => {
+  if (musicInfo.source !== 'anylisten') return
+  // 同一首歌只刷一次（写回快照成功后地址已是对的，重复刷没有意义）
+  if (lastPicRefreshId === musicInfo.id) return
+  lastPicRefreshId = musicInfo.id
+  let raw
+  try {
+    raw = serverMusicInfoOf(toOldMusicInfo(musicInfo))
+  } catch {
+    return
+  }
+  void getMusicPic(raw).then((result) => {
+    const url = typeof result?.url === 'string' ? result.url : ''
+    const resolved = url ? resolveServerUrl(url, getSession().serverUrl) : null
+    if (!resolved || resolved === musicInfo.meta.picUrl) return
+    musicInfo.meta.picUrl = resolved
+    setMusicInfo({ pic: resolved })
+    const listId = playerState.playMusicInfo.listId
+    if (listId) void updateListMusics([{ id: listId, musicInfo }])
+  }).catch(() => {
+    /* 拿不到最新地址就保持快照（可能只是旧地址仍有效，或服务端不支持）。
+       清掉防抖标记：下次切回这首歌还能再试（成功路径不需要重试） */
+    if (lastPicRefreshId === musicInfo.id) lastPicRefreshId = ''
+  })
+}
+
 const setPlayerMusicInfo = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem | null) => {
   if (musicInfo) {
     setMusicInfo('progress' in musicInfo ? {
@@ -110,6 +151,9 @@ const setPlayerMusicInfo = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
       lxlrc: null,
       rawlrc: null,
     })
+    if ('meta' in musicInfo && musicInfo.source === 'anylisten') {
+      refreshAnylistenPic(musicInfo)
+    }
   } else resetPlayerMusicInfo()
 }
 

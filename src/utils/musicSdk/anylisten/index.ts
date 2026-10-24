@@ -117,19 +117,23 @@ export function fetchMusicUrl(oldMusicInfo: any, quality?: LX.Quality) {
 /**
  * 取封面。返回**裸 Promise**（没有 `.promise`）—— 与上面两个刻意不同。
  */
-export function fetchPic(oldMusicInfo: any): Promise<string> {
+export async function fetchPic(oldMusicInfo: any): Promise<string> {
   return (async(): Promise<string> => {
     const raw = rawOf(oldMusicInfo)
 
-    // 优先用服务端直接给的封面地址，避免多打一次请求
+    // **服务端优先**：anylisten 的封面地址会因服务端缓存清理而失效（本地列表里
+    // 存的是收藏/添加时的快照地址），不能只信歌曲自带的 picUrl。服务端的
+    // getMusicPic 带缓存、成本低（Web 端每次显示封面都是现调的）；失败时
+    // （如服务端没装扩展音源）再退回歌曲自带的地址——旧的总比没有强。
+    try {
+      const result = await getMusicPic(raw)
+      const resolved = resolveServerUrl(result?.url, serverUrl())
+      if (resolved) return resolved
+    } catch { /* 落到快照兜底 */ }
+
     const inline = resolveServerUrl(raw.meta?.picUrl, serverUrl())
     if (inline) return inline
-
-    const result = await getMusicPic(raw)
-    if (!result?.url) throw new Error('服务端没有返回封面地址')
-    const resolved = resolveServerUrl(result.url, serverUrl())
-    if (!resolved) throw new Error(`无法解析服务端返回的封面地址：${result.url}`)
-    return resolved
+    throw new Error('服务端没有返回封面地址')
   })()
 }
 
@@ -165,8 +169,8 @@ export function fetchLyric(oldMusicInfo: any) {
      */
     if (!/\[\d{1,2}:\d{2}/.test(lyric)) {
       console.warn(
-        `[anylisten] 歌词没有时间戳，将被丢弃：${raw.name ?? '?'} 长度=${lyric.length}`
-        + ` 首行=${JSON.stringify((lyric.split('\n')[0] ?? '').slice(0, 40))}`,
+        `[anylisten] 歌词没有时间戳，将被丢弃：${raw.name ?? '?'} 长度=${lyric.length}` +
+        ` 首行=${JSON.stringify((lyric.split('\n')[0] ?? '').slice(0, 40))}`,
       )
     }
 
