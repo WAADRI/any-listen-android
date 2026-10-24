@@ -10,7 +10,7 @@ import { AnimatedColorText } from '@/components/common/Text'
 import { setSpText } from '@/utils/pixelRatio'
 import playerState from '@/store/player/state'
 import { scrollTo } from '@/utils/scroll'
-import { findAwlrcLine, lineStyleKind, type Awlrc } from '@/utils/awlrc'
+import { findAwlrcLine, isSameLrcLineZone, lineStyleKind, type Awlrc } from '@/utils/awlrc'
 import WordLyricLine from '../components/WordLyricLine'
 import PlayLine, { type PlayLineType } from '../components/PlayLine'
 // import { screenkeepAwake } from '@/utils/nativeModules/utils'
@@ -128,8 +128,10 @@ const LrcLine = memo(({ line, lineNum, activeLine, awlrc, onLayout }: LineProps)
   )
 }, (prevProps, nextProps) => {
   if (prevProps.line !== nextProps.line || prevProps.awlrc !== nextProps.awlrc) return false
-  // 焦点变化必须重渲染，否则会留着另一套配色（已唱色 / 未唱色）
-  if ((prevProps.activeLine == prevProps.lineNum) !== (nextProps.activeLine == nextProps.lineNum)) return false
+  // 分区翻转（未唱 / 当前 / 已唱）必须重渲染，否则会留着另一套配色。注意不能只比
+  // 「是否当前行」：拖进度条跨行 seek 时，夹在中间的行在已唱与未唱之间整批翻转，
+  // 拦掉它们就是「回拖扫光不消失、前拖不补已唱色」（见 isSameLrcLineZone 的注释）
+  if (!isSameLrcLineZone(prevProps, nextProps)) return false
   // 其余情况不用跟着父组件重画：逐字进度与扫光都在 WordLyricLine 里自己推进
   return true
 })

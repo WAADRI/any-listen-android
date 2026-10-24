@@ -220,6 +220,30 @@ export const lineStyleKind = (
 }
 
 /**
+ * `LrcLine` 的 memo 比较用的分区：本行相对当前行处于「已唱 / 当前 / 未唱」哪一区。
+ *
+ * 一行的渲染（扫光还是整行已唱色还是普通灰字）只由「分区 + 是不是逐字行」决定，
+ * 而逐字行与否跟着 `line` / `awlrc` 走（那两项在 memo 里单独比较），所以
+ * **分区没变就可以跳过重渲染，分区变了就必须重渲染**。
+ *
+ * 之前只比较「是否当前行」这一个比特，漏掉了 `sung`（已唱）与 `idle`（未唱）之间的
+ * 翻转：逐行播放时当前行每次只前进一行，不会触发；但**拖进度条跨行 seek** 时，
+ * 夹在中间的行整批从 idle 变 sung（往后拖 → 该已唱的没唱）或从 sung 变 idle
+ * （往回拖 → 该退灰的不退，扫光留着不消失），全被 memo 拦住不重渲染。
+ */
+export const lineZone = (lineNum: number, activeLine: number): -1 | 0 | 1 =>
+  lineNum === activeLine ? 0 : lineNum < activeLine ? -1 : 1
+
+/**
+ * `LrcLine` 的 memo 比较谓词：两次 props 里本行的**分区**是否相同。
+ * 返回 true（分区相同）才可以跳过重渲染。
+ */
+export const isSameLrcLineZone = (
+  prev: { lineNum: number, activeLine: number },
+  next: { lineNum: number, activeLine: number },
+): boolean => lineZone(prev.lineNum, prev.activeLine) === lineZone(next.lineNum, next.activeLine)
+
+/**
  * 按行时间取逐字段，取不到再退化为按行号取。
  *
  * 两套行列表（普通歌词由 `lrc-file-parser` 解析、逐字由本模块解析）虽然同源，
