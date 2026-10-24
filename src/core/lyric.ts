@@ -119,6 +119,18 @@ export const play = () => {
   void getPosition().then((position) => {
     handlePlay(position * 1000)
   })
+  // native 播放器 resume 有约 130~140ms 的起跑延迟（JS 侧 play() 到 ExoPlayer
+  // 真正出声），期间读到的位置都是「还没起跑」的——把 parser 与扫光时钟锚在
+  // 这一刻，之后每次换行都会带着这个延迟滞后切行（真机日志：恢复后换行
+  // 重锚位置超前行首 ~40ms = 100ms 设计提前量被起跑延迟吃掉）。稍后 native
+  // 已真正起跑时再统一锚定一次，两条时钟一起对齐到真实位置。
+  setTimeout(() => {
+    if (!playerState.isPlay) return
+    void getPosition().then((position) => {
+      if (!playerState.isPlay) return
+      handlePlay(position * 1000)
+    })
+  }, 250)
 }
 
 

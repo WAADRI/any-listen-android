@@ -127,7 +127,11 @@ export const useWordLyricProgress = (line: AwlrcLine | undefined): WordLyricProg
     const step = () => {
       if (isUnmounted) return
       const elapsed = wordLyricClock.positionAt(Date.now()) - lineTimeMs
-      setPlayed(playedCount(segments, elapsed))
+      // 行首 150ms 内不把已唱段显示出来：换行切行可能滞后几十毫秒（native
+      // resume 的起跑延迟等），此时兜底渲染（挂载后到扫光接管前的几帧）会把
+      // 第一个字闪成已唱色、扫光接管后又擦回去——真机上「首字快扫一下」。
+      // 冻结在 0 相当于把这点滞后当作提前量吸收掉，扫光分支不用 played，不受影响
+      setPlayed(elapsed < 150 ? 0 : playedCount(segments, elapsed))
 
       const next = nextBoundaryAt(segments, elapsed)
       if (next == null || !wordLyricClock.isPlay) return
