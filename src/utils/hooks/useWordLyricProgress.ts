@@ -46,6 +46,13 @@ export const useWordLyricProgress = (line: AwlrcLine | undefined): WordLyricProg
   const [resyncVersion, setResyncVersion] = useState(0)
   const prevAnchorRef = useRef<{ line?: AwlrcLine | undefined, isPlay?: boolean }>({})
 
+  // 外部锚定（core/lyric.ts 的 handlePlay）也要能触发扫光重画：
+  // 恢复播放时它锚定的读数才是 parser 与时钟共同的时间基准
+  useEffect(() => {
+    const off = wordLyricClock.onAnchor(() => { setResyncVersion(version => version + 1) })
+    return () => { off() }
+  }, [])
+
   // 重新锚定：换行、播放/暂停切换、拖动进度条、回到前台，都用本机播放位置校准一次
   useEffect(() => {
     let isUnmounted = false
@@ -57,6 +64,15 @@ export const useWordLyricProgress = (line: AwlrcLine | undefined): WordLyricProg
       : prevAnchorRef.current.isPlay !== isPlay ? (isPlay ? '恢复播放' : '暂停') : 'effect重跑'
     prevAnchorRef.current = { line, isPlay }
     const resync = (via: string) => {
+      // 外部（core/lyric.ts 的 handlePlay）刚用**同一次读数**锚过（parser 与扫光
+      // 时钟同锚）：让位，不再自己读一次——两次读取的时刻差会被固化成两条
+      // 时钟的恒定偏差，真机上就是恢复播放后每次换行「首字快扫一下再从头扫」。
+      // 只 bump resyncVersion 让扫光按新锚点重画。
+      if (isPlay && Date.now() - wordLyricClock.anchorAt < 300) {
+        if (lineTimeMs != null) log.info(`[lyric] 重锚(${via}/${source}) 行=${lineTimeMs}ms 让位外部锚定`)
+        setResyncVersion(version => version + 1)
+        return
+      }
       const before = wordLyricClock.isPlay ? Math.round(wordLyricClock.positionAt(Date.now())) : null
       void readPosition().then((position) => {
         if (isUnmounted) return

@@ -204,3 +204,21 @@ test('layoutSweepRows：真实折行场景 —— Bye 的长句按词切段塞�
   assert.equal(covered, line.segments.length)
   assert.equal(layout.totalProgress, widths.reduce((a, b) => a + b, 0))
 })
+
+test('AwlrcClock：外部锚定会通知订阅者，anchorAt 反映最近锚定时刻', () => {
+  const clock = new AwlrcClock()
+  let notified = 0
+  const off = clock.onAnchor(() => { notified++ })
+  clock.setPlay(true, 1000, 10_000)   // 带位置 → 锚定 → 通知
+  assert.equal(notified, 1)
+  assert.equal(clock.anchorAt, 1000)
+  clock.setPlay(false, 2000)          // 暂停（不带位置）→ 不重新锚定、不通知
+  assert.equal(notified, 1)
+  assert.equal(clock.anchorAt, 1000)
+  clock.setRate(2, 3000)              // 改倍速 → 按旧速率结算后重锚 → 通知
+  assert.equal(notified, 2)
+  assert.equal(clock.anchorAt, 3000)
+  off()
+  clock.resync(5000, 4000)
+  assert.equal(notified, 2)           // 退订后不再通知
+})

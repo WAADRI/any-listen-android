@@ -45,6 +45,22 @@ export class AwlrcClock {
   private anchorPos = 0
   private _rate = 1
   private _isPlay = false
+  private readonly anchorListeners = new Set<() => void>()
+
+  /** 最近一次锚定的墙钟时刻（毫秒）。外部锚定后，重锚方可据此让位 */
+  get anchorAt(): number {
+    return this.anchorWall
+  }
+
+  /**
+   * 订阅锚定变化（外部锚定也能触发扫光重画）。
+   * `core/lyric.ts` 的 handlePlay 锚定时钟后，扫光组件靠它拿到通知，
+   * 否则新锚点要等到下一次换行/事件才会生效。
+   */
+  onAnchor(listener: () => void): () => void {
+    this.anchorListeners.add(listener)
+    return () => { this.anchorListeners.delete(listener) }
+  }
 
   get isPlay() {
     return this._isPlay
@@ -58,6 +74,7 @@ export class AwlrcClock {
   resync(positionMs: number, nowMs: number) {
     this.anchorWall = nowMs
     this.anchorPos = positionMs
+    for (const listener of this.anchorListeners) listener()
   }
 
   /**
