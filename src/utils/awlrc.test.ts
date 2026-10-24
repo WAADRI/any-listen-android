@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { parseAwlrc, parseTimeLabel, playedCount, findAwlrcLine, awlrcOf, lineStyleKind } from './awlrc'
+import { parseAwlrc, parseTimeLabel, playedCount, findAwlrcLine, awlrcOf, lineStyleKind, lineZone, isSameLrcLineZone } from './awlrc'
 
 // 下面这段是**服务端真实返回**的 awlyric（`tools/ws-dump-awlrc.mjs` 原样 dump，
 // 曲目：2026一定会幸福 (女声版) - 諾然）。断言值全部按这段真实数据写死，
@@ -146,6 +146,32 @@ test('lineStyleKind：当前行扫光、唱过的行保持已唱色、之后的�
   assert.equal(lineStyleKind(2, 3, false), 'idle')
   // 还没开始唱（当前行是 -1）时全都是普通行
   assert.equal(lineStyleKind(0, -1, true), 'idle')
+})
+
+test('lineZone / isSameLrcLineZone：拖进度条跨行 seek 后，夹在中间的行必须重渲染', () => {
+  // 常规逐行播放（5 → 6）：行 7 两次都在未唱区，可以跳过重渲染
+  assert.equal(isSameLrcLineZone({ lineNum: 7, activeLine: 5 }, { lineNum: 7, activeLine: 6 }), true)
+  // 换当前行：新旧当前行都要重渲染
+  assert.equal(isSameLrcLineZone({ lineNum: 5, activeLine: 5 }, { lineNum: 5, activeLine: 6 }), false)
+  assert.equal(isSameLrcLineZone({ lineNum: 6, activeLine: 5 }, { lineNum: 6, activeLine: 6 }), false)
+
+  // 往后拖（5 → 20）：夹在中间的行从未唱区跨进已唱区，必须重渲染补上已唱色。
+  // 旧的比较只看「是否当前行」，这些行两次都是 false，会被 memo 拦住 —— 就是
+  // 「拖之前到拖之后的这段歌词不会自动加扫光」那个 bug
+  for (let lineNum = 6; lineNum < 20; lineNum++) {
+    assert.equal(isSameLrcLineZone({ lineNum, activeLine: 5 }, { lineNum, activeLine: 20 }), false, `行 ${lineNum}`)
+  }
+  // 往回拖（20 → 5）：中间的行从已唱区退回未唱区，必须重渲染让扫光/已唱色消失
+  for (let lineNum = 6; lineNum < 20; lineNum++) {
+    assert.equal(isSameLrcLineZone({ lineNum, activeLine: 20 }, { lineNum, activeLine: 5 }), false, `行 ${lineNum}`)
+  }
+  // 拖过的两头之外分区不变，不重渲染
+  assert.equal(isSameLrcLineZone({ lineNum: 2, activeLine: 5 }, { lineNum: 2, activeLine: 20 }), true)
+  assert.equal(isSameLrcLineZone({ lineNum: 30, activeLine: 20 }, { lineNum: 30, activeLine: 5 }), true)
+
+  // 还没开始唱（activeLine = -1）→ 直接跳到第 5 行：前 5 行同样整批进已唱区
+  assert.equal(lineZone(0, -1), 1)
+  assert.equal(isSameLrcLineZone({ lineNum: 0, activeLine: -1 }, { lineNum: 0, activeLine: 5 }), false)
 })
 
 test('awlrcOf 只在字段确实是字符串时取值', () => {
