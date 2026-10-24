@@ -26,6 +26,9 @@ export default forwardRef<ListType, {}>((props, ref) => {
       if (listInfo.tagId == tagId && listInfo.sortId == sortId && listInfo.source == source && listInfo.list.length) {
         requestAnimationFrame(() => {
           listRef.current?.setList(listInfo.list)
+          // 恢复数据时必须连同分页状态一起恢复：组件重挂后 Songlist 内部的
+          // status 回到初值 idle，单页列表会被划到底的 onEndReached 误触发加载
+          listRef.current?.setStatus(songlistState.listInfo.maxPage <= songlistState.listInfo.page ? 'end' : 'idle')
         })
       } else {
         listRef.current?.setStatus('loading')
@@ -68,8 +71,17 @@ export default forwardRef<ListType, {}>((props, ref) => {
     })
   }
   const handleLoadMore: SonglistProps['onLoadMore'] = () => {
+    const nextPage = songlistState.listInfo.list.length ? songlistState.listInfo.page + 1 : 1
+    // 已到最后一页就不再请求。这里不能依赖 UI 的 status 拦截：横屏侧边栏切页会
+    // 卸载重挂歌单组件，status 回到初值 idle，划到底就会带着越界的页码请求——
+    // anylisten 适配层对越界页会**钳回第 1 页**返回，而下面的 setList 按传入的
+    // 页码走追加分支，于是整个第 1 页被拼接到列表底部（真机横屏实测的重复加载）。
+    if (nextPage > songlistState.listInfo.maxPage) {
+      listRef.current?.setStatus('end')
+      return
+    }
     listRef.current?.setStatus('loading')
-    const page = songlistState.listInfo.list.length ? songlistState.listInfo.page + 1 : 1
+    const page = nextPage
     getList(songlistState.listInfo.source, songlistState.listInfo.tagId, songlistState.listInfo.sortId, page).then((info) => {
       const result = setList(info, songlistState.listInfo.tagId, songlistState.listInfo.sortId, page)
       if (isUnmountedRef.current) return
