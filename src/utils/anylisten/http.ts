@@ -67,7 +67,9 @@ export interface RelayProbeResult {
 }
 
 const DEFAULT_HEALTH_TIMEOUT_MS = 5_000
-const DEFAULT_CALL_TIMEOUT_MS = 25_000
+// 中转在后端断开时会让请求排队等重连（默认 10s），再给上游 12s；
+// 单次请求的预算必须覆盖这个最坏情况，否则 App 会在 relay 还在等的时候先超时。
+const DEFAULT_CALL_TIMEOUT_MS = 30_000
 const DEFAULT_RETRY_BASE_MS = 800
 const MAX_CALL_ATTEMPTS = 3
 
@@ -356,7 +358,7 @@ export class AnyListenHttpSession implements AnyListenClient {
       if (remaining <= 0) break
 
       try {
-        const data = await this.postRpc<T>(name, args, Math.min(remaining, 15_000))
+        const data = await this.postRpc<T>(name, args, Math.min(remaining, 25_000))
         if (this.state !== 'connected') this.setState('connected')
         return data
       } catch (err) {
