@@ -133,6 +133,23 @@ function errText(err: unknown): string {
 /** 连接状态。 */
 export type ConnState = 'idle' | 'connecting' | 'connected' | 'closed'
 
+/**
+ * 会话接口：WS 直连与 HTTP 中转都实现它。
+ *
+ * 业务层（`api.ts`、`library.ts`、设置页）只依赖这个接口，
+ * 因此切换传输层不需要改动任何调用点。
+ */
+export interface AnyListenClient {
+  /** any-listen 的 HTTP 地址（用于解析封面/音频相对地址）。 */
+  readonly serverUrl: string
+  getState: () => ConnState
+  call: <T = unknown>(name: string, ...args: unknown[]) => Promise<T>
+  connect: () => Promise<void>
+  reconnectNow: () => void
+  close: () => void
+  on: (name: string, handler: (...args: unknown[]) => unknown) => void
+}
+
 export interface SessionOptions {
   serverUrl: string
   password: string
@@ -169,7 +186,7 @@ type Pending = {
  * 漏发的表现是「连上了但永远收不到任何推送」，且不报错。
  * 所以本类在**每一次**连接变为 connected 时都重发 `inited`，见 `onOpen`。
  */
-export class AnyListenSession {
+export class AnyListenSession implements AnyListenClient {
   private ws: WebSocket | null = null
   private state: ConnState = 'idle'
   private seq = 0

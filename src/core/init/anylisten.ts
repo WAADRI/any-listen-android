@@ -22,6 +22,7 @@ import { setupAnyListen, waitForConnected, restartSession, isConfigured } from '
 import { setupConvert } from '@/utils/anylisten/convert'
 import { setupSource } from '@/utils/musicSdk/anylisten'
 import { normalizeServerUrl, type ConnState } from '@/utils/anylisten/client'
+import { normalizeRelayUrl } from '@/utils/anylisten/http'
 import { settleApiGate } from '@/core/apiSource'
 import { log } from '@/utils/log'
 
@@ -42,15 +43,40 @@ function readPassword(): string {
   }
 }
 
-export default function initAnyListen(options?: {
+function readRelayUrl(): string {
+  try {
+    return normalizeRelayUrl(settingState.setting['anylisten.relayUrl'])
+  } catch {
+    return ''
+  }
+}
+
+function readRelayToken(): string {
+  try {
+    return settingState.setting['anylisten.relayToken'] ?? ''
+  } catch {
+    return ''
+  }
+}
+
+/**
+ * 把设置系统接到各模块的注入口上。
+ *
+ * 抽出来是因为 `restartAnyListen()` 也必须重新接一次：设置页的「测试连接」
+ * 会临时用输入框里的值覆盖注入器，如果保存时不重新接回设置 store，
+ * 之后重启应用前会一直用测试时的那份值（改了配置却不生效）。
+ */
+function wireSettings(options?: {
   onStateChange?: (state: ConnState, detail?: string) => void
   onError?: (message: string) => void
-}): Promise<void> {
-  const getServerUrl = readServerUrl
-  const getPassword = readPassword
-
+}): void {
   setupAnyListen({
-    getCredentials: () => ({ serverUrl: getServerUrl(), password: getPassword() }),
+    getCredentials: () => ({
+      serverUrl: readServerUrl(),
+      password: readPassword(),
+      relayUrl: readRelayUrl(),
+      relayToken: readRelayToken(),
+    }),
     // 默认把连接状态与错误写进日志。
     //
     // 为什么重要：连接问题的表现是**静默**的 —— 界面上只是「没有歌」。
@@ -64,8 +90,15 @@ export default function initAnyListen(options?: {
       log.error(`[anylisten] ${message}`)
     }),
   })
-  setupConvert({ getServerUrl })
-  setupSource({ getServerUrl })
+  setupConvert({ getServerUrl: readServerUrl })
+  setupSource({ getServerUrl: readServerUrl })
+}
+
+export default function initAnyListen(options?: {
+  onStateChange?: (state: ConnState, detail?: string) => void
+  onError?: (message: string) => void
+}): Promise<void> {
+  wireSettings(options)
 
   // 未配置服务器时不要发起连接：那只会产生一串无意义的失败重连，
   // 而用户此刻需要的是去设置页填地址。直接拒绝，让门禁保持关闭。
@@ -76,7 +109,10 @@ export default function initAnyListen(options?: {
   }
 
   // 只记地址，**绝不记密码**：日志会落到手机上的文件，也可能被贴出来排查。
-  log.info(`[anylisten] 服务器地址 ${getServerUrl()}`)
+  log.info(`[anylisten] 服务器地址 ${readServerUrl()}`)
+  const relayUrl = readRelayUrl()
+  if (relayUrl) log.info(`[anylisten] 传输方式：HTTP 中转 ${relayUrl}`)
+  else log.info('[anylisten] 传输方式：直连 WebSocket')
 
   // 必须等**真的**连上：connect() 在 socket open 之前就 resolve 了，
   // 用它当门禁会提前放行，随后播放照样失败。见 waitForConnected 的说明。
@@ -112,6 +148,9 @@ export default function initAnyListen(options?: {
  */
 export function restartAnyListen(): Promise<void> {
   log.info('[anylisten] 配置已更改，重新建立连接')
+  // 先把注入器接回设置 store：设置页的「测试连接」会用输入框的值临时覆盖
+  // 注入器，不重新接的话保存后仍会连着测试时的地址。
+  wireSettings()
   // 把门禁**先挂到这次的连接尝试上**，再开始连。
   // 不能用启动时那个 promise：它在「启动时未配置」的情况下已经失败，
   // 拿它落定会让门禁永远是关闭的（就是 source init failed 的成因）。

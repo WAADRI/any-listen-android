@@ -1,0 +1,18 @@
+services:
+  any-listen-relay:
+    build: .
+    container_name: any-listen-relay
+    restart: unless-stopped
+    environment:
+      # 与 any-listen 同一个宿主时，用 host.docker.internal 指向宿主机；
+      # 在 Linux 上需要下面的 extra_hosts，或改用 network_mode: host。
+      ANYLISTEN_URL: http://host.docker.internal:8080
+      ANYLISTEN_PASSWORD: ${ANYLISTEN_PASSWORD:?在 .env 里设置}
+      RELAY_TOKEN: ${RELAY_TOKEN:?在 .env 里设置}
+      HOST: 0.0.0.0
+      PORT: 8099
+      LOG_LEVEL: info
+    ports:
+      - "8099:8099"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

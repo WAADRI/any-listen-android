@@ -1,0 +1,18 @@
+{
+  "name": "any-listen-relay",
+  "version": "1.0.0",
+  "private": true,
+  "description": "把 any-listen 的常驻 WebSocket 留在服务器上，对手机暴露无状态 HTTP RPC",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "any-listen-relay": "./relay.mjs"
+  },
+  "scripts": {
+    "start": "node relay.mjs",
+    "test": "node --test \"test/*.test.mjs\""
+  },
+  "license": "Apache-2.0"
+}
