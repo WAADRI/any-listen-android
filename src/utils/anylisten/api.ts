@@ -7,7 +7,8 @@
  * 会话按「服务器地址 + 密码」缓存：用户改了配置就自动换一个新会话，
  * 而不是继续用旧连接（那会表现为「改了地址但仍在读旧服务器」）。
  */
-import { AnyListenSession, type ConnState } from './client'
+import { AnyListenSession, type AnyListenClient, type ConnState } from './client'
+import { AnyListenHttpSession, normalizeRelayUrl } from './http'
 import type {
   AnyListenMusicInfo,
   AnyListenMusicUrlInfo,
@@ -21,9 +22,16 @@ import type {
 export interface AnyListenCredentials {
   serverUrl: string
   password: string
+  /**
+   * 可选的 HTTP 中转地址。填写后走 HTTP 传输，WS 由中转服务维持；
+   * 留空则保持原来的直连 WS。
+   */
+  relayUrl?: string
+  /** 中转访问令牌（中转配置了 RELAY_TOKEN 时必填）。 */
+  relayToken?: string
 }
 
-let session: AnyListenSession | null = null
+let session: AnyListenClient | null = null
 let sessionKey = ''
 let credentialsProvider: (() => AnyListenCredentials) | null = null
 let onStateChange: ((state: ConnState, detail?: string) => void) | null = null
@@ -89,23 +97,35 @@ function hookAppState(): void {
   }
 }
 
-export function getSession(): AnyListenSession {
+export function getSession(): AnyListenClient {
   hookAppState()
-  const { serverUrl, password } = requireCredentials()
-  const key = `${serverUrl}\u0000${password}`
+  const { serverUrl, password, relayUrl, relayToken } = requireCredentials()
+  const normalizedRelayUrl = normalizeRelayUrl(relayUrl)
+  const key = `${serverUrl}\u0000${password}\u0000${normalizedRelayUrl}\u0000${relayToken ?? ''}`
   if (session && sessionKey === key) return session
 
   if (session) session.close()
   sessionKey = key
-  session = new AnyListenSession({
-    serverUrl,
-    password,
-    // RN 提供全局 fetch 与 WebSocket；显式传入是为了让会话层不 import react-native
-    WebSocketImpl: global.WebSocket as unknown as typeof WebSocket,
-    fetchImpl: global.fetch as unknown as typeof fetch,
-    onStateChange,
-    onError,
-  })
+  // 配了中转地址就走 HTTP：长连接与重连都在中转服务里，手机只发短连接。
+  // 没有配的继续直连 WS，保持老用户的行为不变。
+  session = normalizedRelayUrl
+    ? new AnyListenHttpSession({
+      serverUrl,
+      relayUrl: normalizedRelayUrl,
+      relayToken: relayToken ?? '',
+      fetchImpl: global.fetch as unknown as typeof fetch,
+      onStateChange: onStateChange ?? undefined,
+      onError: onError ?? undefined,
+    })
+    : new AnyListenSession({
+      serverUrl,
+      password,
+      // RN 提供全局 fetch 与 WebSocket；显式传入是为了让会话层不 import react-native
+      WebSocketImpl: global.WebSocket as unknown as typeof WebSocket,
+      fetchImpl: global.fetch as unknown as typeof fetch,
+      onStateChange: onStateChange ?? undefined,
+      onError: onError ?? undefined,
+    })
   void session.connect()
   return session
 }
@@ -118,7 +138,7 @@ export function resetSession(): void {
 }
 
 /** 在所有已建立连接的情形下确保有一个可用会话。 */
-export async function ensureConnected(): Promise<AnyListenSession> {
+export async function ensureConnected(): Promise<AnyListenClient> {
   const s = getSession()
   if (s.getState() === 'connected') return s
   await s.connect()
@@ -133,16 +153,18 @@ export async function ensureConnected(): Promise<AnyListenSession> {
 /**
  * 等到会话**真的**连上为止（或判定不可能成功）。
  *
- * `connect()` 内部只是调 `openSocket()`，而 socket 的 `onopen` 是**异步**回调，
- * 所以 `connect()` resolve 时状态通常还是 `connecting`。用 `ensureConnected()`
- * 的结果当门禁会**提前放行**，随后的 RPC 照样失败。
+ * 直连 WS 时 `connect()` 只是调 `openSocket()`，而 socket 的 `onopen` 是**异步**
+ * 回调，所以 `connect()` resolve 时状态通常还是 `connecting`。用
+ * `ensureConnected()` 的结果当门禁会**提前放行**，随后的 RPC 照样失败。
+ * HTTP 中转模式下 `connect()` 会先探测 `/healthz`，resolve 时状态已经落定，
+ * 但这里仍然按统一的轮询逻辑处理，两种传输层共用同一个门禁。
  *
  * 这个区分很关键：播放门禁 `global.lx.apiInitPromise` 必须反映真实可用性，
  * 否则用户看到的是「已就绪」却放不出歌。
  *
  * @param timeoutMs 最长等待时间；超时抛错，避免门禁永远挂起。
  */
-export async function waitForConnected(timeoutMs = 20_000): Promise<AnyListenSession> {
+export async function waitForConnected(timeoutMs = 20_000): Promise<AnyListenClient> {
   const s = getSession()
   if (s.getState() === 'connected') return s
 

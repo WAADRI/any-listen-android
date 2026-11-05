@@ -36,6 +36,20 @@ declare global {
       'anylisten.password': string
 
       /**
+       * 可选的 HTTP 中转地址（形如 `http://192.168.1.2:8099`）。
+       *
+       * 填写后：常驻 WebSocket 由服务器上的中转进程维持，App 只发短连接 HTTP。
+       * 这是为「后台播放时 WS 掉线、回前台才恢复」准备的；留空则仍然直连 WS。
+       */
+      'anylisten.relayUrl': string
+
+      /**
+       * HTTP 中转的访问令牌（对应中转进程的 `RELAY_TOKEN`）。
+       * 中转只监听回环地址、且未配置令牌时可以留空。
+       */
+      'anylisten.relayToken': string
+
+      /**
        * 音源名称类型，原名、别名
        */
       'common.sourceNameType': 'alias' | 'real'

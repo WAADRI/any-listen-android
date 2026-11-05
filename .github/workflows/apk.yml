@@ -49,6 +49,11 @@ jobs:
         # 测试脚本还给 Node 补了一个把无扩展名导入解析到 .ts 的钩子。
         run: npm test
 
+      - name: Run relay unit tests
+        # 中转服务同样是零依赖（Node 22+ 内置 fetch/WebSocket），
+        # 不需要 npm ci；与 App 测试分开，避免 relay 的失败混在 175 个用例里。
+        run: npm run test:relay
+
   apk:
     name: Build universal APK
     runs-on: ubuntu-latest

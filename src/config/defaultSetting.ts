@@ -74,6 +74,11 @@ const defaultSetting: LX.AppSetting = {
   'anylisten.serverUrl': '',
   // 访问密码。与 Web 端登录用的是同一个密码。
   'anylisten.password': '',
+  // 可选的 HTTP 中转地址。填写后 WS 由中转服务维持（见 relay/README.md），
+  // App 只发短连接 HTTP；留空则直连 WS。
+  'anylisten.relayUrl': '',
+  // 中转访问令牌（对应中转进程的 RELAY_TOKEN）。
+  'anylisten.relayToken': '',
 
   // 'theme.id': 'blue_plus',
   'theme.id': 'green',

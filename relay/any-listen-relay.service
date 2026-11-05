@@ -1,0 +1,16 @@
+[Unit]
+Description=any-listen HTTP relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=anylisten
+EnvironmentFile=/etc/any-listen-relay.env
+ExecStart=/usr/bin/node /opt/any-listen-relay/relay.mjs
+Restart=always
+RestartSec=3
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

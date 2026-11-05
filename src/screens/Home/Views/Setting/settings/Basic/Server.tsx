@@ -56,6 +56,7 @@ import { useTheme } from '@/store/theme/hook'
 import { updateSetting } from '@/core/common'
 import { useSettingValue } from '@/store/setting/hook'
 import { handshake, normalizeServerUrl } from '@/utils/anylisten/client'
+import { normalizeRelayUrl, probeRelay } from '@/utils/anylisten/http'
 import { restartAnyListen } from '@/core/init/anylisten'
 import {
   getAllUserLists,
@@ -63,8 +64,8 @@ import {
   resetSession,
   setupAnyListen,
   waitForConnected,
-  type AnyListenMyAllList,
 } from '@/utils/anylisten/api'
+import type { AnyListenMyAllList } from '@/utils/anylisten/types'
 
 /** 每一步单独记录，便于失败时一眼看出走到了哪一步。 */
 interface TestStep {
@@ -87,15 +88,19 @@ const oneLine = (text: string) => text.replace(/\s+/g, ' ').trim().slice(0, 160)
 /** 统计服务端返回的歌单，顺带给出「有没有内容」的直观判断。 */
 function summarizeLists(all: AnyListenMyAllList | undefined): { lists: number, tracks: number } {
   if (!all) return { lists: 0, tracks: 0 }
-  const groups = [all.defaultList, all.loveList, all.lastPlayList, all.userList]
+  // defaultList / loveList / lastPlayList 是单个对象；只有 userList 是数组。
+  const groups = [
+    all.defaultList,
+    all.loveList,
+    all.lastPlayList,
+    ...(Array.isArray(all.userList) ? all.userList : []),
+  ]
   let lists = 0
   let tracks = 0
-  for (const group of groups) {
-    if (!Array.isArray(group)) continue
-    for (const item of group) {
-      lists++
-      tracks += item?.meta?.songCount ?? 0
-    }
+  for (const item of groups) {
+    if (!item) continue
+    lists++
+    tracks += item.meta?.songCount ?? 0
   }
   return { lists, tracks }
 }
@@ -164,19 +169,70 @@ const PasswordInput = memo(({ initialValue, onChange }: { initialValue: string, 
   )
 })
 
+/** HTTP 中转地址。留空表示直连 WebSocket。 */
+const RelayUrlInput = memo(({ initialValue, onChange }: { initialValue: string, onChange: (value: string) => void }) => {
+  const theme = useTheme()
+  const [text, setText] = useState(initialValue)
+  return (
+    <View style={styles.field}>
+      <Text size={13} style={styles.label}>中转地址</Text>
+      <Input
+        value={text}
+        placeholder="http://192.168.1.2:8099"
+        autoCorrect={false}
+        inputMode="url"
+        onChangeText={(next) => {
+          setText(next)
+          onChange(next)
+        }}
+        style={{ ...styles.input, backgroundColor: theme['c-primary-input-background'] }}
+      />
+    </View>
+  )
+})
+
+/** 中转访问令牌（RELAY_TOKEN）。中转只监听本机时可以留空。 */
+const RelayTokenInput = memo(({ initialValue, onChange }: { initialValue: string, onChange: (value: string) => void }) => {
+  const theme = useTheme()
+  const [text, setText] = useState(initialValue)
+  return (
+    <View style={styles.field}>
+      <Text size={13} style={styles.label}>中转令牌</Text>
+      <Input
+        value={text}
+        placeholder="与中转的 RELAY_TOKEN 一致"
+        autoCorrect={false}
+        secureTextEntry
+        inputMode="text"
+        onChangeText={(next) => {
+          setText(next)
+          onChange(next)
+        }}
+        style={{ ...styles.input, backgroundColor: theme['c-primary-input-background'] }}
+      />
+    </View>
+  )
+})
+
 const ServerSetting = memo(() => {
   const theme = useTheme()
   const savedUrl = useSettingValue('anylisten.serverUrl')
   const savedPassword = useSettingValue('anylisten.password')
+  const savedRelayUrl = useSettingValue('anylisten.relayUrl')
+  const savedRelayToken = useSettingValue('anylisten.relayToken')
 
   const [url, setUrl] = useState(savedUrl ?? '')
-  const [password, setPassword] = useState(savedPassword ?? '')
+  const [password] = useState(savedPassword ?? '')
+  const [relayUrl, setRelayUrl] = useState(savedRelayUrl ?? '')
+  const [relayToken] = useState(savedRelayToken ?? '')
   const [test, setTest] = useState<TestState>({ kind: 'idle' })
 
-  // 界面上「最新的值」。两个输入框各自维护局部 state 并**逐键**回调，
+  // 界面上「最新的值」。输入框各自维护局部 state 并**逐键**回调，
   // 所以 ref 始终最新；用 ref 是为了让 test / save 直接读，不依赖 state 更新时机。
   const urlRef = useRef(url)
   const passwordRef = useRef(password)
+  const relayUrlRef = useRef(relayUrl)
+  const relayTokenRef = useRef(relayToken)
 
   const handleUrlChange = useCallback((next: string) => {
     urlRef.current = next
@@ -184,19 +240,28 @@ const ServerSetting = memo(() => {
   const handlePasswordChange = useCallback((next: string) => {
     passwordRef.current = next
   }, [])
+  const handleRelayUrlChange = useCallback((next: string) => {
+    relayUrlRef.current = next
+  }, [])
+  const handleRelayTokenChange = useCallback((next: string) => {
+    relayTokenRef.current = next
+  }, [])
 
   // 测试与保存都用 ref 里的最新值
   const current = useCallback(() => ({
     url: urlRef.current,
     password: passwordRef.current,
+    relayUrl: relayUrlRef.current,
+    relayToken: relayTokenRef.current,
   }), [])
 
   const testSeq = useRef(0)
 
   const handleTest = useCallback(() => {
-    const { url: rawUrl, password: pwd } = current()
+    const { url: rawUrl, password: pwd, relayUrl: rawRelayUrl, relayToken } = current()
     const seq = ++testSeq.current
     const normalized = normalizeServerUrl(rawUrl)
+    const relay = normalizeRelayUrl(rawRelayUrl)
     if (!normalized) {
       setTest({ kind: 'done', steps: [{ label: '服务器地址', ok: false, detail: '请先填写服务器地址' }] })
       return
@@ -213,36 +278,58 @@ const ServerSetting = memo(() => {
       // 用输入框里的值，而不是已保存的值：用户正在测试尚未保存的配置。
       // setupAnyListen 是幂等的注入口，这里覆盖成当前输入即可。
       setupAnyListen({
-        getCredentials: () => ({ serverUrl: normalized, password: pwd }),
+        getCredentials: () => ({ serverUrl: normalized, password: pwd, relayUrl: relay, relayToken }),
       })
       resetSession()
 
-      // 1. 握手 —— 验证地址与密码
-      const hs = await handshake({
-        serverUrl: normalized,
-        password: pwd,
-        fetchImpl: global.fetch as unknown as typeof fetch,
-      })
-      if (!hs.ok) {
-        push('握手（地址与密码）', false, oneLine(hs.message))
-        return
-      }
-      push('握手（地址与密码）', true, `服务器 ${hs.serverId ? hs.serverId.slice(0, 8) : '已确认'}`)
+      if (relay) {
+        // 中转模式：手机不再直接握 any-listen 的 WS，密码由中转持有。
+        // 所以这里测的是「中转可达 + 中转的上游 WS 已连上」。
+        const probe = await probeRelay({
+          relayUrl: relay,
+          relayToken,
+          fetchImpl: global.fetch as unknown as typeof fetch,
+          timeoutMs: 10_000,
+        })
+        const relayOk = probe.ok && probe.connected
+        push('HTTP 中转', relayOk, probe.message)
+        if (!relayOk) return
 
-      // 2. 连接 WebSocket —— 反向代理最容易漏掉的一环。
-      // 用 waitForConnected 而不是 connect()：后者在 socket open 之前就返回，
-      // 会把「连不上」误报成成功，而那正是这个按钮要发现的问题。
-      try {
-        await waitForConnected(15_000)
-      } catch (err: unknown) {
-        push('WebSocket 连接', false,
-          `${oneLine(err instanceof Error ? err.message : String(err))}。`
-          + '请确认反向代理转发了 WebSocket Upgrade 请求（Nginx 需要 proxy_set_header Upgrade/Connection）。')
-        return
-      }
-      push('WebSocket 连接', true, '已连接')
+        try {
+          await waitForConnected(15_000)
+        } catch (err: unknown) {
+          push('中转会话', false, oneLine(err instanceof Error ? err.message : String(err)))
+          return
+        }
+        push('中转会话', true, 'RPC 已就绪')
+      } else {
+        // 1. 握手 —— 验证地址与密码
+        const hs = await handshake({
+          serverUrl: normalized,
+          password: pwd,
+          fetchImpl: global.fetch as unknown as typeof fetch,
+        })
+        if (!hs.ok) {
+          push('握手（地址与密码）', false, oneLine(hs.message))
+          return
+        }
+        push('握手（地址与密码）', true, `服务器 ${hs.serverId ? hs.serverId.slice(0, 8) : '已确认'}`)
 
-      // 3. 取歌单列表 —— 证明 inited 之后 RPC 真的可用
+        // 2. 连接 WebSocket —— 反向代理最容易漏掉的一环。
+        // 用 waitForConnected 而不是 connect()：后者在 socket open 之前就返回，
+        // 会把「连不上」误报成成功，而那正是这个按钮要发现的问题。
+        try {
+          await waitForConnected(15_000)
+        } catch (err: unknown) {
+          push('WebSocket 连接', false,
+            `${oneLine(err instanceof Error ? err.message : String(err))}。` +
+            '请确认反向代理转发了 WebSocket Upgrade 请求（Nginx 需要 proxy_set_header Upgrade/Connection）。')
+          return
+        }
+        push('WebSocket 连接', true, '已连接')
+      }
+
+      // 3. 取歌单列表 —— 证明会话 RPC 真的可用
       const all = await getAllUserLists()
       const { lists, tracks } = summarizeLists(all)
       if (lists === 0) {
@@ -252,7 +339,9 @@ const ServerSetting = memo(() => {
       push('读取歌单', true, `共 ${lists} 个歌单，${tracks} 首歌曲`)
 
       // 4. 取第一个歌单的歌曲 —— 走完「服务端 → 曲库」的完整链路
-      const first = all.userList?.[0] ?? all.defaultList?.[0] ?? all.lastPlayList?.[0]
+      // defaultList / loveList / lastPlayList 是单个对象，不是数组：
+      // 早先写成 `all.defaultList?.[0]` 时，没有用户歌单的账号会永远跳过这一步。
+      const first = all.userList?.[0] ?? all.defaultList ?? all.lastPlayList
       if (!first?.id) {
         push('读取歌曲', true, '跳过（歌单数量不足以抽样）')
         return
@@ -262,7 +351,7 @@ const ServerSetting = memo(() => {
       push('读取歌曲', true, `「${first.name ?? first.id}」返回 ${count} 首`)
     }
 
-    const timeout = new Promise<never>((_, reject) => {
+    const timeout = new Promise<never>((_resolve, reject) => {
       setTimeout(() => { reject(new Error(`测试超时（超过 ${TEST_TIMEOUT_MS / 1000} 秒无响应）`)) }, TEST_TIMEOUT_MS)
     })
 
@@ -277,14 +366,19 @@ const ServerSetting = memo(() => {
   }, [current])
 
   const handleSave = useCallback(() => {
-    const { url: rawUrl, password: pwd } = current()
+    const { url: rawUrl, password: pwd, relayUrl: rawRelayUrl, relayToken } = current()
     const normalized = normalizeServerUrl(rawUrl)
+    const normalizedRelay = normalizeRelayUrl(rawRelayUrl)
     updateSetting({
       'anylisten.serverUrl': normalized,
       'anylisten.password': pwd,
+      'anylisten.relayUrl': normalizedRelay,
+      'anylisten.relayToken': relayToken,
     })
     urlRef.current = normalized
     setUrl(normalized)
+    relayUrlRef.current = normalizedRelay
+    setRelayUrl(normalizedRelay)
 
     // 只 resetSession() 是不够的：它只关掉旧 socket，**没有东西会重建连接**，
     // 而播放门禁仍是上个会话的 true。表现就是保存后进歌单页是空的，
@@ -325,6 +419,24 @@ const ServerSetting = memo(() => {
         密码连续输错会被服务端拉黑 IP，请先用「测试连接」确认。
       </Text>
 
+      <View style={styles.section}>
+        <Text size={14} style={styles.subTitle}>HTTP 中转（可选）</Text>
+        <Text size={11} style={styles.sectionDesc}>
+          在 any-listen 同机部署 relay 后填写。启用后常驻 WebSocket 由中转维持，App 只发短连接
+          HTTP，后台播放时不会因为 WS 掉线而卡在「回前台才恢复」。留空则直连 WebSocket。
+        </Text>
+
+        <RelayUrlInput initialValue={relayUrl} onChange={handleRelayUrlChange} />
+        <Text size={11} style={styles.hint}>
+          填手机能访问到的中转地址（例如 http://192.168.1.2:8099），需带 http:// 或 https://。
+        </Text>
+
+        <RelayTokenInput initialValue={relayToken} onChange={handleRelayTokenChange} />
+        <Text size={11} style={styles.hint}>
+          对应中转进程的 RELAY_TOKEN；中转只监听本机且未设令牌时留空。
+        </Text>
+      </View>
+
       <View style={styles.actions}>
         {/* 文案直接传字符串：设置页的 Button 自己会包一层 Text
             （裸字符串交给通用 Button 会抛
@@ -358,7 +470,7 @@ const ServerSetting = memo(() => {
 
       <View style={styles.note}>
         <Text size={11} color={theme['c-font-label']}>
-          修改地址或密码后请点「保存」，应用会重新建立连接。
+          修改地址、密码或中转配置后请点「保存」，应用会重新建立连接。
         </Text>
       </View>
     </View>
@@ -380,6 +492,16 @@ const styles = createStyle({
   desc: {
     marginBottom: 16,
     lineHeight: 18,
+  },
+  section: {
+    marginTop: 8,
+  },
+  subTitle: {
+    marginBottom: 4,
+  },
+  sectionDesc: {
+    marginBottom: 12,
+    lineHeight: 16,
   },
   field: {
     marginBottom: 4,

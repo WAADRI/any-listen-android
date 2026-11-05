@@ -1,7 +1,7 @@
 {
   "name": "lx-music-mobile",
-  "version": "1.9.0-anylisten.20",
-  "versionCode": 108,
+  "version": "1.9.0-anylisten.21",
+  "versionCode": 109,
   "private": true,
   "scripts": {
     "dev": "react-native run-android --active-arch-only",
@@ -11,6 +11,7 @@
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
     "lint:fix": "eslint . --ext .js,.jsx,.ts,.tsx --fix",
     "test": "node --import ./tools/tsResolver.mjs --test \"src/**/*.test.ts\"",
+    "test:relay": "node --test \"relay/test/*.test.mjs\"",
     "rd": "react-devtools",
     "menu": "adb shell input keyevent 82",
     "bundle-android": "react-native bundle --platform android --dev true --entry-file index.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res",
