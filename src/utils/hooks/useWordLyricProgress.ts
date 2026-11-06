@@ -1,8 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AppState } from 'react-native'
 import { getPosition } from '@/plugins/player'
 import { useIsPlay } from '@/store/player/hook'
-import { log } from '@/utils/log'
 import { playedCount, type AwlrcLine } from '@/utils/awlrc'
 import { AwlrcClock, nextBoundaryAt } from '@/utils/awlrcPlayer'
 
@@ -44,7 +43,6 @@ export const useWordLyricProgress = (line: AwlrcLine | undefined): WordLyricProg
   const isPlay = useIsPlay()
   const [played, setPlayed] = useState(0)
   const [resyncVersion, setResyncVersion] = useState(0)
-  const prevAnchorRef = useRef<{ line?: AwlrcLine | undefined, isPlay?: boolean }>({})
 
   // 外部锚定（core/lyric.ts 的 handlePlay）也要能触发扫光重画：
   // 恢复播放时它锚定的读数才是 parser 与时钟共同的时间基准
@@ -56,33 +54,20 @@ export const useWordLyricProgress = (line: AwlrcLine | undefined): WordLyricProg
   // 重新锚定：换行、播放/暂停切换、拖动进度条、回到前台，都用本机播放位置校准一次
   useEffect(() => {
     let isUnmounted = false
-    const lineTimeMs = line?.timeMs
-    // 诊断日志：真机「首字/前几个字快扫一下再从头扫」的问题模拟器上不出现，
-    // 需要真机日志定位。只记录重锚来源与位置偏差（有逐字行时才打，避免刷屏）。
-    const source = prevAnchorRef.current.line !== line
-      ? '换行'
-      : prevAnchorRef.current.isPlay !== isPlay ? (isPlay ? '恢复播放' : '暂停') : 'effect重跑'
-    prevAnchorRef.current = { line, isPlay }
-    const resync = (via: string) => {
+    const resync = () => {
       // 外部（core/lyric.ts 的 handlePlay）刚用**同一次读数**锚过（parser 与扫光
       // 时钟同锚）：让位，不再自己读一次——两次读取的时刻差会被固化成两条
       // 时钟的恒定偏差，真机上就是恢复播放后每次换行「首字快扫一下再从头扫」。
       // 只 bump resyncVersion 让扫光按新锚点重画。
       if (isPlay && Date.now() - wordLyricClock.anchorAt < 300) {
-        if (lineTimeMs != null) log.info(`[lyric] 重锚(${via}/${source}) 行=${lineTimeMs}ms 让位外部锚定`)
         setResyncVersion(version => version + 1)
         return
       }
-      const before = wordLyricClock.isPlay ? Math.round(wordLyricClock.positionAt(Date.now())) : null
       void readPosition().then((position) => {
         if (isUnmounted) return
         // 读不到位置（播放器还没就绪）也要恢复走表，否则逐字歌词会一直冻住
         if (position == null) wordLyricClock.setPlay(isPlay, Date.now())
         else wordLyricClock.setPlay(isPlay, Date.now(), position)
-        if (lineTimeMs != null) {
-          log.info(`[lyric] 重锚(${via}/${source}) 行=${lineTimeMs}ms 位置=${position ?? '读取失败'}ms` +
-            (before != null && position != null ? ` 重锚前时钟=${before}ms 偏差=${position - before}ms` : ''))
-        }
         setResyncVersion(version => version + 1)
       })
     }
@@ -93,16 +78,16 @@ export const useWordLyricProgress = (line: AwlrcLine | undefined): WordLyricProg
     // 拖进度/切歌没有这个叠加，所以看不出问题）。播放中保持时钟在走、读到
     // 位置再原子重锚，空窗里只剩读位置那点毫秒级漂移。
     if (!isPlay) wordLyricClock.setPlay(false, Date.now())
-    resync('effect')
+    resync()
 
     const handleSetProgress = () => {
-      resync('setProgress事件')
+      resync()
     }
     // 拖进度条、跳到某一行、恢复播放进度都会发这个事件
     global.app_event.on('setProgress', handleSetProgress)
 
     const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') resync('回前台')
+      if (state === 'active') resync()
     })
 
     return () => {
