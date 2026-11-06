@@ -1,7 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Animated, AppState, Easing, StyleSheet, View, type ColorValue, type LayoutChangeEvent, type TextStyle } from 'react-native'
 import Text from '@/components/common/Text'
-import { log } from '@/utils/log'
 import { type AwlrcLine, type AwlrcSegment } from '@/utils/awlrc'
 import { layoutSweepRows, nextBoundaryAt, sweepXAt } from '@/utils/awlrcPlayer'
 import { useWordLyricProgress, wordLyricClock } from '@/utils/hooks/useWordLyricProgress'
@@ -128,12 +127,10 @@ const WordLyricLine = memo(({ line, size, lineHeight, textAlign, playedColor, un
     layout.rows.every((row) => row.width > 0 && row.width <= box.width)
 
   // 扫光：每段开始时开一次线性动画，时长就是这一段的时长（照搬桌面版的 _refresh）
-  const loggedFirstStepRef = useRef(false)
   useEffect(() => {
     if (!canSweep || !layout) return
     let isUnmounted = false
     let timer: ReturnType<typeof setTimeout> | null = null
-    loggedFirstStepRef.current = false
 
     const step = () => {
       if (isUnmounted) return
@@ -153,11 +150,6 @@ const WordLyricLine = memo(({ line, size, lineHeight, textAlign, playedColor, un
         // 先摆到当前进度再开动画：换行切行可能滞后几十毫秒（native resume 的起跑
         // 延迟等），不摆的话动画会从 0「追扫」到当前位置——真机上就是首字快扫
         progress.setValue(sweepXAt(segments, layout.globalEnds, elapsed))
-        if (!loggedFirstStepRef.current) {
-          loggedFirstStepRef.current = true
-          // 诊断日志（配合 useWordLyricProgress 的重锚日志）：定位真机首字快扫问题
-          log.info(`[lyric] 扫光首帧(动画) 行=${line.timeMs}ms elapsed=${Math.round(elapsed)}ms 段=${index} 剩余=${Math.round(remaining)}ms`)
-        }
         Animated.timing(progress, {
           toValue: layout.globalEnds[index] ?? 0,
           duration: Math.max(1, remaining / wordLyricClock.rate),
@@ -167,10 +159,6 @@ const WordLyricLine = memo(({ line, size, lineHeight, textAlign, playedColor, un
       } else {
         // 还没开始 / 落在空隙里 / 这一段已经唱完 —— 以及**暂停**：
         // 暂停时必须直接摆到当前位置，不能把这一段动画跑完，否则暂停后字还会被扫完
-        if (!loggedFirstStepRef.current) {
-          loggedFirstStepRef.current = true
-          log.info(`[lyric] 扫光首帧(直达) 行=${line.timeMs}ms elapsed=${Math.round(elapsed)}ms 段=${index} isPlay=${wordLyricClock.isPlay}`)
-        }
         progress.setValue(sweepXAt(segments, layout.globalEnds, elapsed))
       }
 
